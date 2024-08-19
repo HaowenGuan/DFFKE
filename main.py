@@ -97,6 +97,57 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
         print(f'>> Saved clients checkpoint to {folder + file_name}.pt')
 
 
+def evaluate(clients, loader, dataset, name, mode='cls_test', device='cuda'):
+    """
+    Evaluate the performance of each client on the given full dataset
+    @param clients: dict
+    @param loader: DataLoader
+    @param dataset: 'Train' or 'Test'
+    @param name: Special Prefix, 'Local Aligned' or 'Global Exchanged'
+    @param mode: 'emb_test' or 'cls_test'
+    @param device: torch.device
+    """
+    print(f"Testing Each Client's Performance on {dataset} Set after {name}")
+    results = ''
+    client_loss_list = []
+    client_acc_list = []
+    client_acc_dict = {}
+    for c_id, client in tqdm(clients.items()):
+        client.eval()
+        if mode == 'emb_test':
+            client_loss, client_acc = embedding_test(client, loader, False, device)
+        elif mode == 'cls_test':
+            client_loss, client_acc = general_one_epoch(client, loader, None, device)
+        else:
+            raise ValueError('Unknown mode')
+        results += f'{c_id}:({client_loss:.2f},{client_acc:.2f}) '
+        client_loss_list.append(client_loss)
+        client_acc_list.append(client_acc)
+        client_acc_dict[c_id] = client_acc
+    print(f">> {dataset} Set (Loss,Acc): {results}")
+    print(f'>> Avg:({np.mean(client_loss_list):.2f},{np.mean(client_acc_list):.2f})')
+
+    if args['log_wandb']:
+        wandb.log({
+            f'{name} {dataset} Set Loss': np.mean(client_loss_list),
+            f'{name} {dataset} Set Acc': np.mean(client_acc_list)
+        })
+    return client_acc_dict
+
+
+def pure_student_evaluation(pure_student, train_loader, test_loader, device):
+    ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
+    print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc:.3f}')
+    ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
+    print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc:.3f}')
+    if args['log_wandb']:
+        wandb.log({
+            'Pure Student Train Set CLS Loss': ps_train_cls_loss,
+            'Pure Student Train Set CLS Acc': ps_train_cls_acc,
+            'Pure Student Test Set CLS Loss': ps_test_cls_loss,
+            'Pure Student Test Set CLS Acc': ps_test_cls_acc,})
+
+
 def run_experiment(args):
     import os
     # Set random seed
@@ -163,67 +214,14 @@ def run_experiment(args):
         train_dataset = CustomDataset(X_train_client, Y_train_client, transform=client_test_transform)
         fixed_train_loaders[client_id] = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
 
-    # training set data loader for testing
+    # full training set data loader for evaluation purpose
     print(f'>> Full Train Set Size: {len(X_train)}')
     train_dataset = CustomDataset(X_train, Y_train, transform=client_test_transform)
     full_train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
 
-
     print(f'>> Full Test Set Size: {len(X_test)}')
     test_dataset = CustomDataset(X_test, Y_test, transform=client_test_transform)
     test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=False, num_workers=4)
-
-
-    def evaluate(clients, loader, dataset, name, mode='cls_test', device='cuda'):
-        """
-        Evaluate the performance of each client on the given full dataset
-        @param clients: dict
-        @param loader: DataLoader
-        @param dataset: 'Train' or 'Test'
-        @param name: Special Prefix, 'Local Aligned' or 'Global Exchanged'
-        @param mode: 'emb_test' or 'cls_test'
-        @param device: torch.device
-        """
-        print(f"Testing Each Client's Performance on {dataset} Set after {name}")
-        results = ''
-        client_loss_list = []
-        client_acc_list = []
-        client_acc_dict = {}
-        for c_id, client in tqdm(clients.items()):
-            client.eval()
-            if mode == 'emb_test':
-                client_loss, client_acc = embedding_test(client, loader, False, device)
-            elif mode == 'cls_test':
-                client_loss, client_acc = general_one_epoch(client, loader, None, device)
-            else:
-                raise ValueError('Unknown mode')
-            results += f'{c_id}:({client_loss:.2f},{client_acc:.2f}) '
-            client_loss_list.append(client_loss)
-            client_acc_list.append(client_acc)
-            client_acc_dict[c_id] = client_acc
-        print(f">> {dataset} Set (Loss,Acc): {results}")
-        print(f'>> Avg:({np.mean(client_loss_list):.2f},{np.mean(client_acc_list):.2f})')
-
-        if args['log_wandb']:
-            wandb.log({
-                f'{name} {dataset} Set Loss': np.mean(client_loss_list),
-                f'{name} {dataset} Set Acc': np.mean(client_acc_list)
-            })
-        return client_acc_dict
-
-
-    def pure_student_evaluation(pure_student, device):
-        ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, full_train_loader, None, device)
-        print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc:.3f}')
-        ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
-        print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc:.3f}')
-        if args['log_wandb']:
-            wandb.log({
-                'Pure Student Train Set CLS Loss': ps_train_cls_loss,
-                'Pure Student Train Set CLS Acc': ps_train_cls_acc,
-                'Pure Student Test Set CLS Loss': ps_test_cls_loss,
-                'Pure Student Test Set CLS Acc': ps_test_cls_acc,})
-
 
     ######################################## Warmup Clients Model ########################################
     # Load the checkpoint if needed
@@ -284,7 +282,7 @@ def run_experiment(args):
 
     evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', device)
     evaluate(clients, test_loader, 'Test', 'Local Aligned', 'cls_test', device)
-    pure_student_evaluation(pure_student, device)
+    pure_student_evaluation(pure_student, full_train_loader, test_loader, device)
     print("-------------------------------------------------------------------------------------------------")
 
     ######################################## Knowledge Distill ########################################
@@ -324,7 +322,7 @@ def run_experiment(args):
         )
         FKE_clients = {c_id: copy.deepcopy(client) for c_id, client in clients.items()}
 
-        pure_student_evaluation(pure_student, device)
+        pure_student_evaluation(pure_student, full_train_loader, test_loader, device)
         evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', device)
         evaluate(clients, test_loader, 'Test', 'Global Exchanged', 'cls_test', device)
         
