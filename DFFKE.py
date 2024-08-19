@@ -446,10 +446,10 @@ def federated_knowledge_exchange(
                 loss = torch.Tensor([0]).to(device)
                 if args['G2L_cal_emb_loss']:
                     emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
-                    db_emb_loss_list.append(emb_loss.item())
+                    emb_loss_list.append(emb_loss.item())
                     loss += emb_loss
                 logit_loss = F.kl_div(F.log_softmax(c_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-                db_logit_loss_list.append(logit_loss.item())
+                logit_loss_list.append(logit_loss.item())
                 loss += logit_loss
                 loss.backward()
                 client_optimizer.step()
@@ -461,9 +461,9 @@ def federated_knowledge_exchange(
             loss = torch.Tensor([0]).to(device)
             if args['G2L_cal_emb_loss']:
                 emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
-                db_ps_emb_loss_list.append(emb_loss.item())
+                ps_emb_loss_list.append(emb_loss.item())
             logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-            db_ps_logit_loss_list.append(logit_loss.item())
+            ps_logit_loss_list.append(logit_loss.item())
             loss += logit_loss
             loss.backward()
             pure_student_optimizer.step()

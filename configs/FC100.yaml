@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-cuda_gpu: 0
+cuda_gpu: 1
 log_wandb: True
 wandb_project: BlackBoxFL
 wandb_name: null
@@ -9,7 +9,7 @@ wandb_name: null
 n_clients: 10
 local_acc: 0.95
 warmup_clients: False
-save_clients: True
+save_clients: False
 
 # DFFKE
 knowledge_exchange_rounds: 20
@@ -24,7 +24,7 @@ L2G_use_logit_md_loss: True #/ Only One
 G2L_epoch: 4
 G2L_local_review_iteration: 1
 G2L_augment_real: False
-G2L_cal_emb_loss: False
+G2L_cal_emb_loss: True
 
 checkpoint_dir: ./checkpoints/
 ######### Load Clients checkpoints #########
