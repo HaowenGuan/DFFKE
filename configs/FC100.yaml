@@ -1,11 +1,8 @@
 ######### System #########
 device: cuda
 cuda_gpu: 1
-log_wandb: True
-#wandb_name: Save God Model and God Fake Data
-#wandb_name: Testing 10 Clients with God Fake Data / Fake KD / One Hot KD / Cross Train
-#wandb_name: Fake KD / One Hot KD / Contrastive Meta Test / ResNet18 / Cross Train
-#wandb_name: Latent Sample Generator / BBFKD / Fixed DS / 1 Client / L2G 300.cls.emb / G2L 300.real.cls.emb
+log_wandb: wandb
+wandb_project: BlackBoxFL
 wandb_name: null
 
 ######### Switches #########

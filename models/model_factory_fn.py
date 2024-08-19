@@ -4,7 +4,7 @@ from models import resnet
 from models import generators
 from models.model import *
 import copy
-import torchsummary
+# import torchsummary
 
 
 def get_model(model_name, **kwargs):

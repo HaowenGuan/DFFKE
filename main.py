@@ -3,7 +3,6 @@ import copy
 import yaml
 import wandb
 import random
-import shutil
 import argparse
 import numpy as np
 import torch
@@ -70,7 +69,7 @@ def generate_wandb_name(args):
 def init_wandb(args):
     wandb.init(
         sync_tensorboard=False,
-        project="BlackBoxFL",
+        project=args['wandb_project'],
         config=args,
         job_type="CleanRepo",
         name=args['wandb_name'] if args['wandb_name'] else generate_wandb_name(args),

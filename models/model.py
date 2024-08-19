@@ -7,7 +7,6 @@ from torch.hub import load_state_dict_from_url
 from models.feature_extractor.vision_transformer import VisionTransformer
 from functools import partial
 import timm
-from lora import LoRA_ViT_timm
 
 from torchvision import transforms
 from torchvision.transforms.functional import InterpolationMode
@@ -244,13 +243,11 @@ class ServerModel(nn.Module):
             num_feature=640
         elif encoder == 'vit_base_patch16_clip_224.openai':
             self.transform = transforms.Resize(size=224, interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=True)
-            clip = timm.create_model(encoder,
-                                          pretrained=pretrained,
-                                          img_size=224,
-                                          num_classes=0).eval()
-            # We freeze the weights of the ViT inside this model
-            # do not set all parameters to require_grad when using server model
-            self.encoder = LoRA_ViT_timm(vit_model=clip, r=4, alpha=4, num_classes=0)
+            self.encoder = timm.create_model(
+                encoder,
+                pretrained=pretrained,
+                img_size=224,
+                num_classes=0)
             num_feature = 768
         elif encoder == 'clip_vit_tiny':
             self.encoder = VisionTransformer(
