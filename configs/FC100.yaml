@@ -1,0 +1,71 @@
+######### System #########
+device: cuda
+cuda_gpu: 1
+log_wandb: True
+#wandb_name: Save God Model and God Fake Data
+#wandb_name: Testing 10 Clients with God Fake Data / Fake KD / One Hot KD / Cross Train
+#wandb_name: Fake KD / One Hot KD / Contrastive Meta Test / ResNet18 / Cross Train
+#wandb_name: Latent Sample Generator / BBFKD / Fixed DS / 1 Client / L2G 300.cls.emb / G2L 300.real.cls.emb
+wandb_name: null
+
+######### Switches #########
+n_clients: 10
+local_acc: 0.95
+warmup_clients: False
+save_clients: False
+
+# DFFKE
+knowledge_exchange_rounds: 20
+generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
+review_local_after_knowledge_exchange: True
+new_client_opt_every_round: True
+dock_kd: True # Dock or Emb
+L2G_epoch: 6
+L2G_augment_logits: False
+L2G_use_emb_md_loss: False  #\ Only One
+L2G_use_logit_md_loss: True #/ Only One
+G2L_epoch: 4
+G2L_local_review_iteration: 1
+G2L_augment_real: False
+
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/clients/
+#load_clients: ./checkpoints/knowledge_exchange/
+
+seed: 0
+dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
+redo_ds_split: True
+data_dir: ./data/
+alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
+
+client_encoder: resnet18
+#client_encoder: clip_vit_tiny
+#client_encoder: vit_base_patch16_clip_224.openai
+
+# Training Hyper-parameters
+client_lr: 0.001
+generator_model_lr: 0.001
+reg: 1.0e-05
+batch_size: 100
+
+
+######### Other #########
+# Only for few-shot learning
+meta_config:
+  num_train_tasks: 500
+  num_test_tasks: 10
+  train_client_class: 5
+  train_support_num: 5
+  train_query_num: 15
+  test_client_class: 5
+  test_support_num: 5
+  test_query_num: 15
+  test_k: [5]
+  test_ft_lr: 0.001
+  test_ft_approach: contrastive # prototype / contrastive / classic
+  test_ft_steps: 20
+  test_use_docking: False # Embedding / Docking
+  aug_types: [color, translation]
+  aug_prob: 1.0
