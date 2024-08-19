@@ -1,3 +1,4 @@
+import torch
 import wandb
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -408,23 +409,30 @@ def federated_knowledge_exchange(
                     continue
                 client_optimizer.zero_grad()
                 c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
-                emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
+                loss = torch.Tensor([0]).to(device)
+                if args['G2L_cal_emb_loss']:
+                    emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
+                    db_emb_loss_list.append(emb_loss.item())
+                    loss += emb_loss
                 logit_loss = F.kl_div(F.log_softmax(c_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-                (emb_loss + logit_loss).backward()
-                client_optimizer.step()
-                db_emb_loss_list.append(emb_loss.item())
                 db_logit_loss_list.append(logit_loss.item())
+                loss += logit_loss
+                loss.backward()
+                client_optimizer.step()
                 db_fake_acc_list.append((torch.argmax(c_fake_logit, dim=1) == target).float().mean().item())
 
             # Extra: Train Pure Student to examine the performance of Knowledge Exchange
             pure_student_optimizer.zero_grad()
             ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
-            emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
+            loss = torch.Tensor([0]).to(device)
+            if args['G2L_cal_emb_loss']:
+                emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
+                db_ps_emb_loss_list.append(emb_loss.item())
             logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-            (emb_loss + logit_loss).backward()
-            pure_student_optimizer.step()
-            db_ps_emb_loss_list.append(emb_loss.item())
             db_ps_logit_loss_list.append(logit_loss.item())
+            loss += logit_loss
+            loss.backward()
+            pure_student_optimizer.step()
 
         # Phase C: Train Current Fake Data
         for data_bank_id, data_bank_inf_loader in fake_data_inf_loaders.items():
@@ -435,23 +443,30 @@ def federated_knowledge_exchange(
                     continue
                 client_optimizer.zero_grad()
                 c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
-                emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
+                loss = torch.Tensor([0]).to(device)
+                if args['G2L_cal_emb_loss']:
+                    emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
+                    db_emb_loss_list.append(emb_loss.item())
+                    loss += emb_loss
                 logit_loss = F.kl_div(F.log_softmax(c_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-                (emb_loss + logit_loss).backward()
+                db_logit_loss_list.append(logit_loss.item())
+                loss += logit_loss
+                loss.backward()
                 client_optimizer.step()
-                emb_loss_list.append(emb_loss.item())
-                logit_loss_list.append(logit_loss.item())
                 fake_acc_list.append((torch.argmax(c_fake_logit, dim=1) == target).float().mean().item())
 
             # Extra: Train Pure Student to examine the performance of Knowledge Exchange
             pure_student_optimizer.zero_grad()
             ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
-            emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
+            loss = torch.Tensor([0]).to(device)
+            if args['G2L_cal_emb_loss']:
+                emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
+                db_ps_emb_loss_list.append(emb_loss.item())
             logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-            (emb_loss + logit_loss).backward()
+            db_ps_logit_loss_list.append(logit_loss.item())
+            loss += logit_loss
+            loss.backward()
             pure_student_optimizer.step()
-            ps_emb_loss_list.append(emb_loss.item())
-            ps_logit_loss_list.append(logit_loss.item())
 
         if args['log_wandb']:
             if real_loss_list:

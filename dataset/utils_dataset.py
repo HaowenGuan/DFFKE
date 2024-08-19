@@ -171,12 +171,12 @@ def get_federated_learning_dataset(dataset, data_dir, n_clients, alpha=1.0, samp
     if os.path.exists(buffer_path) and not redo_split:
         print(f'>> Loading buffer dataset from {buffer_path}')
         buffer = torch.load(buffer_path)
-        X_train_clients = buffer['X_train_clients']
-        Y_train_clients = buffer['Y_train_clients']
-        X_test = buffer['X_test']
-        Y_test = buffer['Y_test']
-        client_class_cnt = buffer['client_class_cnt']
-        print(X_train_clients[0])
+        X_train_clients = np.array((buffer['X_train_clients'])).copy()
+        Y_train_clients = np.array(buffer['Y_train_clients']).copy()
+        X_test = np.array(buffer['X_test']).copy()
+        Y_test = np.array(buffer['Y_test']).copy()
+        client_class_cnt = np.array(buffer['client_class_cnt']).copy()
+        del buffer
         print(f'>> Loaded.')
     else:
         print(f'>> Generating new buffer dataset...')

@@ -15,12 +15,13 @@ def get_cifar_transform():
         transforms.RandomCrop(32, padding=4),
         transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
         transforms.RandomHorizontalFlip(),
-        lambda x: np.asarray(x),
+        lambda x: np.array(x),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5070751592371323, 0.48654887331495095, 0.4409178433670343],
                              std=[0.2673342858792401, 0.2564384629170883, 0.27615047132568404])
         ])
     test_transform = transforms.Compose([
+        lambda x: np.array(x),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5070751592371323, 0.48654887331495095, 0.4409178433670343],
                              std=[0.2673342858792401, 0.2564384629170883, 0.27615047132568404])

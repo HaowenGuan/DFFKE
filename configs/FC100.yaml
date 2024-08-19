@@ -1,7 +1,7 @@
 ######### System #########
 device: cuda
-cuda_gpu: 1
-log_wandb: wandb
+cuda_gpu: 0
+log_wandb: True
 wandb_project: BlackBoxFL
 wandb_name: null
 
@@ -9,7 +9,7 @@ wandb_name: null
 n_clients: 10
 local_acc: 0.95
 warmup_clients: False
-save_clients: False
+save_clients: True
 
 # DFFKE
 knowledge_exchange_rounds: 20
@@ -24,16 +24,17 @@ L2G_use_logit_md_loss: True #/ Only One
 G2L_epoch: 4
 G2L_local_review_iteration: 1
 G2L_augment_real: False
+G2L_cal_emb_loss: False
 
 checkpoint_dir: ./checkpoints/
 ######### Load Clients checkpoints #########
 #load_clients: null
-load_clients: ./checkpoints/clients/
+load_clients: ./checkpoints/warmup/
 #load_clients: ./checkpoints/knowledge_exchange/
 
 seed: 0
 dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
-redo_ds_split: True
+redo_ds_split: False
 data_dir: ./data/
 alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
 

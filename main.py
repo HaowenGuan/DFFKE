@@ -56,7 +56,9 @@ def generate_wandb_name(args):
             if args['G2L_augment_real']:
                 name += 'aug'
             name += f'real.'
-        name += 'emb.kl / '
+        if args['G2L_cal_emb_loss']:
+            name += 'emb.'
+        name += 'kl / '
         if args['dock_kd']:
             name += 'Dock KD / '
         else:
@@ -83,7 +85,7 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
     if args['save_clients']:
         folder = args['checkpoint_dir'] + checkpoint_folder
         mkdir(folder)
-        file_name = f'KE_{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
         checkpoint = {}
         for c_id, client in clients.items():
             checkpoint[c_id] = {
@@ -91,8 +93,8 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
                 'optimizer_state_dict': optimizers[c_id].state_dict(),
             }
         # Save the checkpoint
-        torch.save(checkpoint, folder + f'{file_name}.pth')
-        print(f'>> Saved clients checkpoint to {folder + file_name}.pth')
+        torch.save(checkpoint, folder + f'{file_name}.pt')
+        print(f'>> Saved clients checkpoint to {folder + file_name}.pt')
 
 
 def run_experiment(args):
@@ -226,8 +228,8 @@ def run_experiment(args):
     ######################################## Warmup Clients Model ########################################
     # Load the checkpoint if needed
     if args['load_clients'] is not None:
-        file_name = f'warmup_{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
-        checkpoint_path = args['load_clients'] + file_name + '.pth'
+        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        checkpoint_path = args['load_clients'] + file_name + '.pt'
         # Check if the checkpoint exists
         if not os.path.exists(checkpoint_path):
             print(f'>> Checkpoint file {checkpoint_path} does not exist. Skip loading clients.')
@@ -277,19 +279,8 @@ def run_experiment(args):
                 wandb.log({'Local Aligned Best Test Set Loss': np.mean(list(local_aligned_best_test_loss.values())),
                            'Local Aligned Best Test Set Acc': np.mean(list(local_aligned_best_test_acc.values()))})
 
-        if args['save_clients']:
-            warmup_folder = args['checkpoint_dir'] + 'clients/'
-            mkdir(warmup_folder)
-            file_name = f'warmup_{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
-            checkpoint = {}
-            for c_id, client in clients.items():
-                checkpoint[c_id] = {
-                    'model_state_dict': client.state_dict(),
-                    'optimizer_state_dict': client_optimizers[c_id].state_dict(),
-                }
-            # Save the checkpoint
-            torch.save(checkpoint, warmup_folder + f'{file_name}.pth')
-            print(f'>> Saved clients checkpoint to {warmup_folder + file_name}.pth')
+        save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/')
+        print(">> Warmup Clients Finished.")
 
     evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', device)
     evaluate(clients, test_loader, 'Test', 'Local Aligned', 'cls_test', device)
