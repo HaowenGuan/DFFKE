@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-cuda_gpu: 1
+cuda_gpu: 0
 log_wandb: True
 wandb_project: BlackBoxFL
 wandb_name: null
@@ -17,6 +17,7 @@ generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGen
 review_local_after_knowledge_exchange: True
 new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
+cls_clustering: True
 L2G_epoch: 6
 L2G_augment_logits: False
 L2G_use_emb_md_loss: False  #\ Only One

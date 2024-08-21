@@ -1,10 +1,15 @@
-import torch
 import wandb
-from tqdm import tqdm
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
 from torch.utils.data import DataLoader
+from collections import defaultdict
+from tqdm import tqdm
 
-from DFFKE_losses import *
-from dataset.utils_dataset import *
+from DFFKE_losses import contrastive, inverse_cross_entropy
+from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader
+
 
 def generate_labels(n, class_num):
     """
@@ -132,55 +137,98 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
     L2G_client_data_loader = client_aug_data_loaders if args['L2G_augment_logits'] else client_data_loaders
 
     ###################################### Clustering Clients Data Distribution ######################################
-    # Simulating the procedure of getting data embeddings from clients
-    data_embeddings = defaultdict(lambda: defaultdict(list))
-    for c_id, client in clients.items():
-        client.eval()
-        client_data_loader = L2G_client_data_loader[c_id]
-        with torch.no_grad():
-            for data, target in client_data_loader:
-                data = data.to(device)
-                embedding = client(data, use_docking=False)[0].detach()
-                for i, y in enumerate(target):
-                    data_embeddings[y.item()][c_id].append(embedding[i])
-
-    client_data_embeddings = defaultdict(dict)
-    for y in data_embeddings:
-        for c_id in data_embeddings[y]:
-            client_data_embeddings[y][c_id] = torch.stack(data_embeddings[y][c_id])
-    del data_embeddings
-
-    # Train the docking layer for each client to optimally cluster the data embeddings
-    docking_params = []
-    L1Loss = nn.L1Loss()
-    MSELoss = nn.MSELoss()
-    for c_id, client in clients.items():
-        docking_params.extend(client.docking.parameters())
-    docking_optimizer = torch.optim.Adam(docking_params, lr=0.001)
     wandb_step = wandb.run.step if args['log_wandb'] else 0
-    for s in tqdm(range(500)):
-        class_embeddings = {}
-        docking_optimizer.zero_grad()
-        for y, embeddings in client_data_embeddings.items():
-            class_embeddings[y] = torch.cat([clients[c_id].docking(embeddings[c_id]) for c_id in embeddings])
-        class_means = {y: class_embeddings[y].mean(dim=0) for y in class_embeddings}
+    if args['cls_clustering']:
+        # Collect data embeddings from clients
+        client_emb_logit_loaders = {}
+        n_samples = {}
+        for c_id, client in clients.items():
+            client.eval()
+            client_emb = []
+            client_logit = []
+            client_target = []
+            for data, target in L2G_client_data_loader[c_id]:
+                data, target = data.to(device), target.to(device)
+                emb, logit = client(data, use_docking=False)
+                client_emb.append(emb.detach())
+                client_logit.append(F.softmax(logit, dim=1).detach())
+                client_target.append(target)
+            client_emb = torch.cat(client_emb, dim=0).cpu()
+            client_logit = torch.cat(client_logit, dim=0).cpu()
+            client_target = torch.cat(client_target, dim=0).cpu()
+            emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
+            client_emb_logit_loaders[c_id] = DataLoader(emb_logit_set, batch_size=batch_size)
+            n_samples[c_id] = len(client_target)
 
-        class_means_tensor = []
-        class_means_label = []
-        for y, class_mean in class_means.items():
-            class_means_tensor.append(class_mean)
-            class_means_label.append(y)
-        class_means_tensor = torch.stack(class_means_tensor)
-        contrastive_loss = contrastive(class_means_tensor, class_means_tensor.detach())
-        class_means = {y: class_means[y].detach().repeat((class_embeddings[y].shape[0], 1)) for y in class_means}
-        mse_loss = torch.stack([MSELoss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
-        l1_loss = torch.stack([L1Loss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
-        (contrastive_loss + mse_loss).backward()
-        docking_optimizer.step()
-        if args['log_wandb']:
-            wandb.log({'Clustering MSE Loss': mse_loss.item()}, step=wandb_step + s)
-            wandb.log({'Clustering L1 Loss': l1_loss.item()}, step=wandb_step + s)
-            wandb.log({'Clustering Contrastive Loss': contrastive_loss.item()}, step=wandb_step + s)
+        # Train the docking layer for each client to optimally cluster the data embeddings
+        cls_layer = nn.Linear(clients[0].docking.out_features, num_classes).to(device)
+        clustering_params = list(cls_layer.parameters())
+        for c_id, client in clients.items():
+            clustering_params.extend(client.docking.parameters())
+        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-5)
+        for s in tqdm(range(100)):
+            clustering_loss = []
+            for c_id, client in clients.items():
+                emb_logit_loader = client_emb_logit_loaders[c_id]
+                loss = torch.Tensor([0]).to(device)
+                docking_optimizer.zero_grad()
+                for emb, _, target in emb_logit_loader:
+                    emb, target = emb.to(device), target.to(device)
+                    logit = cls_layer(client.docking(emb))
+                    loss += F.cross_entropy(logit, target, reduction='sum')
+                loss /= n_samples[c_id]
+                loss.backward()
+                docking_optimizer.step()
+                clustering_loss.append(loss.item())
+            if args['log_wandb']:
+                wandb.log({'Clustering Loss': np.mean(clustering_loss)}, step=wandb_step + s)
+    else: # Regular Clustering
+        # Collect data embeddings from clients
+        data_embeddings = defaultdict(lambda: defaultdict(list))
+        for c_id, client in clients.items():
+            client.eval()
+            client_data_loader = L2G_client_data_loader[c_id]
+            with torch.no_grad():
+                for data, target in client_data_loader:
+                    data = data.to(device)
+                    embedding = client(data, use_docking=False)[0].detach()
+                    for i, y in enumerate(target):
+                        data_embeddings[y.item()][c_id].append(embedding[i])
+
+        client_data_embeddings = defaultdict(dict)
+        for y in data_embeddings:
+            for c_id in data_embeddings[y]:
+                client_data_embeddings[y][c_id] = torch.stack(data_embeddings[y][c_id])
+        del data_embeddings
+
+        # Train the docking layer for each client to optimally cluster the data embeddings
+        clustering_params = []
+        for c_id, client in clients.items():
+            clustering_params.extend(client.docking.parameters())
+        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001)
+        for s in tqdm(range(500)):
+            class_embeddings = {}
+            docking_optimizer.zero_grad()
+            for y, embeddings in client_data_embeddings.items():
+                class_embeddings[y] = torch.cat([clients[c_id].docking(embeddings[c_id]) for c_id in embeddings])
+            class_means = {y: class_embeddings[y].mean(dim=0) for y in class_embeddings}
+
+            class_means_tensor = []
+            class_means_label = []
+            for y, class_mean in class_means.items():
+                class_means_tensor.append(class_mean)
+                class_means_label.append(y)
+            class_means_tensor = torch.stack(class_means_tensor)
+            contrastive_loss = contrastive(class_means_tensor, class_means_tensor.detach())
+            class_means = {y: class_means[y].detach().repeat((class_embeddings[y].shape[0], 1)) for y in class_means}
+            mse_loss = torch.stack([F.mse_loss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
+            l1_loss = torch.stack([F.l1_loss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
+            (contrastive_loss + mse_loss).backward()
+            docking_optimizer.step()
+            if args['log_wandb']:
+                wandb.log({'Clustering MSE Loss': mse_loss.item()}, step=wandb_step + s)
+                wandb.log({'Clustering L1 Loss': l1_loss.item()}, step=wandb_step + s)
+                wandb.log({'Clustering Contrastive Loss': contrastive_loss.item()}, step=wandb_step + s)
 
     # Collect the embeddings and logits of the clients
     client_emb_logit_loaders = {}

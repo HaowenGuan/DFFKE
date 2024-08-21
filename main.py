@@ -239,6 +239,7 @@ def run_experiment(args):
                 del state_dict[c_id]['model_state_dict']['docking.bias']
                 client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
                 # client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
+            print(f'>> Loaded.')
 
 
     local_aligned_best_test_loss = {c_id: 0 for c_id in clients}
