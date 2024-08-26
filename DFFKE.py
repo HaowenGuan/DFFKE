@@ -111,8 +111,6 @@ def get_soft_batch_weight(soft_labels, class_client_weight):
     return batch_weight
 
 
-
-
 def data_free_federated_knowledge_exchange_with_latent_generator(
         args,
         clients,
@@ -142,7 +140,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         # Collect data embeddings from clients
         client_emb_logit_loaders = {}
         n_samples = {}
-        for c_id, client in clients.items():
+        for c_id, client in enumerate(clients):
             client.eval()
             client_emb = []
             client_logit = []
@@ -163,12 +161,12 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         # Train the docking layer for each client to optimally cluster the data embeddings
         cls_layer = nn.Linear(clients[0].docking.out_features, num_classes).to(device)
         clustering_params = list(cls_layer.parameters())
-        for c_id, client in clients.items():
+        for c_id, client in enumerate(clients):
             clustering_params.extend(client.docking.parameters())
         docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-3)
         for s in tqdm(range(100)):
             clustering_loss = []
-            for c_id, client in clients.items():
+            for c_id, client in enumerate(clients):
                 emb_logit_loader = client_emb_logit_loaders[c_id]
                 loss = torch.Tensor([0]).to(device)
                 docking_optimizer.zero_grad()
@@ -185,7 +183,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
     else: # Regular Clustering
         # Collect data embeddings from clients
         data_embeddings = defaultdict(lambda: defaultdict(list))
-        for c_id, client in clients.items():
+        for c_id, client in enumerate(clients):
             client.eval()
             client_data_loader = L2G_client_data_loader[c_id]
             with torch.no_grad():
@@ -203,7 +201,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
 
         # Train the docking layer for each client to optimally cluster the data embeddings
         clustering_params = []
-        for c_id, client in clients.items():
+        for c_id, client in enumerate(clients):
             clustering_params.extend(client.docking.parameters())
         docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001)
         for s in tqdm(range(500)):
@@ -231,8 +229,8 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
                 wandb.log({'Clustering Contrastive Loss': contrastive_loss.item()}, step=wandb_step + s)
 
     # Collect the embeddings and logits of the clients
-    client_emb_logit_loaders = {}
-    for c_id, client in clients.items():
+    client_emb_logit_loaders = []
+    for c_id, client in enumerate(clients):
         client_emb = []
         client_logit = []
         client_target = []
@@ -246,22 +244,22 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         client_logit = torch.cat(client_logit, dim=0).cpu()
         client_target = torch.cat(client_target, dim=0).cpu()
         emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
-        client_emb_logit_loaders[c_id] = DataLoader(emb_logit_set, batch_size=batch_size, shuffle=True, drop_last=True)
+        client_emb_logit_loaders.append(DataLoader(emb_logit_set, batch_size=batch_size, shuffle=True, drop_last=True))
 
     ############################################# L2G: Local to Generator ############################################
 
     wandb_step = wandb.run.step if args['log_wandb'] else 0
     generator.train()
     pure_student.eval()
-    max_data_len = max([len(loader) for loader in client_emb_logit_loaders.values()])
+    max_data_len = max([len(loader) for loader in client_emb_logit_loaders])
     L2G_iteration = L2G_epoch * max_data_len
     for s in tqdm(range(L2G_iteration)):
         # Direct sample generator
-        inf_emb_logit_loaders = {c_id: InfiniteDataLoader(loader) for c_id, loader in client_emb_logit_loaders.items()}
+        inf_emb_logit_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(client_emb_logit_loaders)]
         emb_loss_list = []
         cls_loss_list = []
         md_loss_list = []
-        for t_id, teacher in clients.items():
+        for t_id, teacher in enumerate(clients):
             c_real_emb, c_real_logit, target = inf_emb_logit_loaders[t_id].get_next()
             c_real_emb, c_real_logit, target = c_real_emb.to(device), c_real_logit.to(device), target.to(device)
 
@@ -296,7 +294,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
                 total_loss += md_loss
             elif args['L2G_use_logit_md_loss']:
                 md_loss = torch.Tensor([0]).to(device)
-                for s_id, student in FKE_clients.items():
+                for s_id, student in enumerate(FKE_clients):
                     if s_id == t_id:
                         continue
                     _, s_fake_logit = student(fake_data, use_docking=False)
@@ -319,10 +317,10 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
 
     ############################################# G2L: Generator to Local ############################################
     # Generate fake data from generator, preprocess fake data knowledge from each teacher (client)
-    fake_datasets = {}
-    fake_data_loaders = {}
-    data_bank_loaders = {c_id: None for c_id in clients}
-    for c_id, client in clients.items():
+    fake_datasets = []
+    fake_data_loaders = []
+    data_bank_loaders = []
+    for c_id, client in enumerate(clients):
         fake_data = []
         fake_emb = []
         fake_logit = []
@@ -342,8 +340,8 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         fake_emb = torch.cat(fake_emb, dim=0).cpu()
         fake_logit = torch.cat(fake_logit, dim=0).cpu()
         fake_target = torch.cat(fake_target, dim=0).cpu()
-        fake_datasets[c_id] = FakeDataset(fake_data, fake_emb, fake_logit, fake_target)
-        fake_data_loaders[c_id] = DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True)
+        fake_datasets.append(FakeDataset(fake_data, fake_emb, fake_logit, fake_target))
+        fake_data_loaders.append(DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
 
         # Preprocess data bank knowledge from each teacher (client)
@@ -364,7 +362,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
             data_banks[c_id].emb = np.array(torch.cat(fake_emb, dim=0).cpu())
             data_banks[c_id].logit = np.array(torch.cat(fake_logit, dim=0).cpu())
             data_banks[c_id].target = np.array(torch.cat(fake_target, dim=0).cpu())
-            data_bank_loaders[c_id] = DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True, drop_last=True)
+            data_bank_loaders.append(DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
 
     federated_knowledge_exchange(
@@ -373,14 +371,14 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         client_optimizers=client_optimizers,
         client_data_loaders=client_aug_data_loaders if args['G2L_augment_real'] else client_data_loaders,
         client_class_cnt=client_class_cnt,
-        proxy_data_loaders=fake_data_loaders,
+        fake_data_loaders=fake_data_loaders,
         data_bank_loaders=data_bank_loaders,
         G2L_epoch=G2L_epoch,
         device=device,
         pure_student=pure_student,
     )
 
-    for c_id, data_bank in data_banks.items():
+    for c_id, data_bank in enumerate(data_banks):
         fake_dataset = fake_datasets[c_id]
         if data_bank:
             data_bank.update(fake_dataset)
@@ -394,28 +392,28 @@ def federated_knowledge_exchange(
         client_optimizers,
         client_data_loaders,
         client_class_cnt,
-        proxy_data_loaders,
+        fake_data_loaders,
         data_bank_loaders,
         G2L_epoch,
         pure_student,
         device='cpu',):
     pure_student.train()
-    for c_id, client in clients.items():
+    for client in clients:
         client.train()
 
     num_clients, num_classes = client_class_cnt.shape
-    client_inf_loaders = {c_id: InfiniteDataLoader(loader) for c_id, loader in client_data_loaders.items()}
-    fake_data_inf_loaders = {c_id: InfiniteDataLoader(loader) for c_id, loader in proxy_data_loaders.items()}
-    data_bank_inf_loaders = {c_id: InfiniteDataLoader(loader) for c_id, loader in data_bank_loaders.items() if loader is not None}
+    client_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(client_data_loaders)]
+    fake_data_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(fake_data_loaders)]
+    data_bank_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(data_bank_loaders) if loader is not None]
 
     # Convert Dict to List to save hashing time
-    students = [[c_id, client, client_optimizers[c_id], client_inf_loaders[c_id]] for c_id, client in clients.items()]
+    students = [[c_id, client, client_optimizers[c_id], client_inf_loaders[c_id]] for c_id, client in enumerate(clients)]
 
     import torch.optim as optimizer
     pure_student_optimizer = optimizer.Adam(pure_student.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
     wandb_step = wandb.run.step if args['log_wandb'] else 0
 
-    max_data_len = max([len(loader) for loader in proxy_data_loaders.values()])
+    max_data_len = max([len(loader) for loader in fake_data_loaders])
     G2L_iteration = G2L_epoch * max_data_len
 
     for i in tqdm(range(G2L_iteration)):
@@ -452,7 +450,7 @@ def federated_knowledge_exchange(
 
         # Phase B: Review Data Bank Fake Data
         for _ in range(args['G2L_data_bank_iteration']):
-            for data_bank_id, data_bank_inf_loader in data_bank_inf_loaders.items():
+            for data_bank_id, data_bank_inf_loader in enumerate(data_bank_inf_loaders):
                 fake_data, t_fake_emb, t_fake_logit, target = data_bank_inf_loader.get_next()
                 fake_data, t_fake_emb, t_fake_logit, target = fake_data.to(device), t_fake_emb.to(device), t_fake_logit.to(device), target.to(device)
                 for c_id, client, client_optimizer, _ in students:
@@ -486,7 +484,7 @@ def federated_knowledge_exchange(
                 pure_student_optimizer.step()
 
         # Phase C: Train Current Fake Data
-        for data_bank_id, data_bank_inf_loader in fake_data_inf_loaders.items():
+        for data_bank_id, data_bank_inf_loader in enumerate(fake_data_inf_loaders):
             fake_data, t_fake_emb, t_fake_logit, target = data_bank_inf_loader.get_next()
             fake_data, t_fake_emb, t_fake_logit, target = fake_data.to(device), t_fake_emb.to(device), t_fake_logit.to(device), target.to(device)
             for c_id, client, client_optimizer, _ in students:

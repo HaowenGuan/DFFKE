@@ -13,7 +13,7 @@ from tqdm import tqdm
 from DFFKE import data_free_federated_knowledge_exchange_with_latent_generator
 from utils_train import general_one_epoch, embedding_test
 from models.model_factory_fn import get_generator, init_client_nets
-from dataset.transforms import get_cifar_transform, get_mini_image_transform, get_vit_original_size_transform
+from dataset.transforms import get_cifar_transform, get_mini_image_transform
 from dataset.utils_dataset import load_dataset, get_federated_learning_dataset, CustomDataset
 
 
@@ -28,7 +28,7 @@ def init_args():
     args = parser.parse_args()
 
     current_folder = os.path.dirname(os.path.abspath(__file__))
-    args.config_file = current_folder + f'/configs/{args["config_file"]}'
+    args.config_file = current_folder + f'/configs/{args.config_file}'
     with open(args.config_file, 'r') as file:
         args = yaml.safe_load(file)
 
@@ -84,7 +84,7 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
         mkdir(folder)
         file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
         checkpoint = {}
-        for c_id, client in clients.items():
+        for c_id, client in enumerate(clients):
             checkpoint[c_id] = {
                 'model_state_dict': client.state_dict(),
                 'optimizer_state_dict': optimizers[c_id].state_dict(),
@@ -109,7 +109,7 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', device='cuda'):
     client_loss_list = []
     client_acc_list = []
     client_acc_dict = {}
-    for c_id, client in tqdm(clients.items()):
+    for c_id, client in tqdm(list(enumerate(clients))):
         client.eval()
         if mode == 'emb_test':
             client_loss, client_acc = embedding_test(client, loader, False, device)
@@ -171,9 +171,9 @@ def run_experiment(args):
     print(">> Initializing clients models")
     clients = init_client_nets(args['n_clients'] + 1, args['client_encoder'], n_class, device)
     pure_student = clients[args['n_clients']]
-    del clients[args['n_clients']]
+    clients = clients[:args['n_clients']]
     client_optimizers = {}
-    for client_id, client in clients.items():
+    for client_id, client in enumerate(clients):
         client_optimizers[client_id] = optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
 
     train_transform = test_transform = None
@@ -188,9 +188,9 @@ def run_experiment(args):
     else:
         raise ValueError('Unknown encoder')
 
-    train_loaders = {}
-    fixed_train_loaders = {}
-    for client_id, client in clients.items():
+    train_loaders = []
+    fixed_train_loaders = []
+    for client_id, client in enumerate(clients):
         # Get the private data for the client
         X_train_client = X_train_clients[client_id]
         Y_train_client = Y_train_clients[client_id]
@@ -200,11 +200,11 @@ def run_experiment(args):
         # Create the private data loader for each client
         train_dataset = CustomDataset(X_train_client, Y_train_client, transform=train_transform)
         train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
-        train_loaders[client_id] = train_loader
+        train_loaders.append(train_loader)
 
         # Create the fixed data loader for each client
         train_dataset = CustomDataset(X_train_client, Y_train_client, transform=test_transform)
-        fixed_train_loaders[client_id] = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
+        fixed_train_loaders.append(DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4))
 
     # full training set data loader for evaluation purpose
     print(f'>> Full Train Set Size: {len(X_train)}')
@@ -226,7 +226,7 @@ def run_experiment(args):
         else:
             print(f'>> Loading clients checkpoint from {checkpoint_path}')
             state_dict = torch.load(checkpoint_path)
-            for c_id, client in clients.items():
+            for c_id, client in enumerate(clients):
                 del state_dict[c_id]['model_state_dict']['docking.weight']
                 del state_dict[c_id]['model_state_dict']['docking.bias']
                 client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
@@ -234,12 +234,12 @@ def run_experiment(args):
             print(f'>> Loaded.')
 
 
-    local_aligned_best_test_loss = {c_id: 0 for c_id in clients}
-    local_aligned_best_test_acc = {c_id: 0 for c_id in clients}
+    local_aligned_best_test_loss = [0] * args['n_clients']
+    local_aligned_best_test_acc = [0] * args['n_clients']
     if args['warmup_clients']:
         # Initialize client optimizers
         print(">> Warmup Each Clients:")
-        training_clients = {c_id: client for c_id, client in clients.items()}
+        training_clients = {c_id: client for c_id, client in enumerate(clients)}
         client_training_loss_acc = {}
         client_testing_loss_acc = {}
         epoch = 0
@@ -279,17 +279,17 @@ def run_experiment(args):
     print("-------------------------------------------------------------------------------------------------")
 
     ######################################## Knowledge Distill ########################################
-    local_aligned_best_test_loss = {c_id: 0 for c_id in clients}
-    local_aligned_best_test_acc = {c_id: 0 for c_id in clients}
-    data_banks = {c_id: None for c_id in clients}
-    FKE_clients = {c_id: client for c_id, client in clients.items()}
+    local_aligned_best_test_loss = [0] * args['n_clients']
+    local_aligned_best_test_acc = [0] * args['n_clients']
+    data_banks = [None] * args['n_clients']
+    FKE_clients = clients.copy()
     
     for round_i in range(args['knowledge_exchange_rounds']):
         print(f'>> Current Round: {round_i}')
 
         if args['new_client_opt_every_round']:
             # New optimizer for each client every round
-            for client_id, client in clients.items():
+            for client_id, client in enumerate(clients):
                 client_optimizers[client_id] = optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
 
         generator = get_generator(model_name=args['generator_model'], nz=clients[0].output.in_features, n_cls=n_class)
@@ -313,14 +313,14 @@ def run_experiment(args):
             data_banks=data_banks,
             FKE_clients=FKE_clients,
         )
-        FKE_clients = {c_id: copy.deepcopy(client) for c_id, client in clients.items()}
+        FKE_clients = [copy.deepcopy(client) for client in clients]
 
         pure_student_evaluation(pure_student, full_train_loader, full_test_loader, device)
         evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', device)
         evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', device)
         
         if args['review_local_after_knowledge_exchange']:
-            training_clients = {c_id: client for c_id, client in clients.items()}
+            training_clients = {c_id: client for c_id, client in enumerate(clients)}
             client_training_loss_acc = {}
             while len(training_clients) > 0:
                 train_results = ''

@@ -30,7 +30,7 @@ def init_client_nets(num_clients, client_encoder, n_class, device):
     """
     Initialize the networks for each client
     """
-    nets = {net_i: None for net_i in range(num_clients)}
+    nets = []
 
     model = ClientModel(client_encoder, n_class)
     model.to(device)
@@ -43,7 +43,7 @@ def init_client_nets(num_clients, client_encoder, n_class, device):
     for net_i in range(num_clients):
         net = copy.deepcopy(model)
         net.to(device)
-        nets[net_i] = net
+        nets.append(net)
 
     return nets
 
