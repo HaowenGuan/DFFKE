@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.resnetcifar import ResNet18_cifar10, ResNet50_cifar10
+from models.resnet32x32 import resnet18_32x32, resnet50_32x32
 from torch.distributions import Bernoulli
 from torch.hub import load_state_dict_from_url
 from models.feature_extractor.vision_transformer import VisionTransformer
@@ -224,12 +224,12 @@ class ServerModel(nn.Module):
         self.transform = None
 
         if encoder == "resnet50-cifar10" or encoder == "resnet50-cifar100" or encoder == "resnet50-smallkernel" or encoder == "resnet50":
-            temp_model = ResNet50_cifar10()
+            temp_model = resnet50_32x32()
             self.encoder = nn.Sequential(*list(temp_model.children())[:-1])
             num_feature = temp_model.fc.in_features
         elif encoder == "resnet18-cifar10" or encoder == "resnet18":
             print("Using resnet18")
-            temp_model = ResNet18_cifar10()
+            temp_model = resnet18_32x32()
             if pretrained:
                 state_dict = load_state_dict_from_url(model_urls['resnet18'], progress=True)
                 del state_dict['conv1.weight']
@@ -296,10 +296,10 @@ class ClientModel(nn.Module):
         """
         super(ClientModel, self).__init__()
 
-        if encoder == "resnet18":
-            temp_model = ResNet18_cifar10()
-            self.encoder = nn.Sequential(*list(temp_model.children())[:-1])
-            num_feature = temp_model.fc.in_features
+        if encoder == "ResNet18_32x32":
+            resnet = resnet18_32x32()
+            self.encoder = nn.Sequential(*list(resnet.children())[:-1])
+            num_feature = resnet.fc.in_features
         elif 'clip' in encoder:
             self.encoder = VisionTransformer(
                 img_size=32,

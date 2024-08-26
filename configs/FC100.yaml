@@ -24,6 +24,7 @@ L2G_use_emb_md_loss: False  #\ Only One
 L2G_use_logit_md_loss: True #/ Only One
 G2L_epoch: 4
 G2L_local_review_iteration: 1
+G2L_data_bank_iteration: 1
 G2L_augment_real: False
 G2L_cal_emb_loss: True
 
@@ -39,7 +40,7 @@ redo_ds_split: False
 data_dir: ./data/
 alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
 
-client_encoder: resnet18
+client_encoder: ResNet18_32x32 # ResNet18_32x32
 #client_encoder: clip_vit_tiny
 #client_encoder: vit_base_patch16_clip_224.openai
 

@@ -93,7 +93,6 @@ class InfiniteDataLoader:
 
 
 def load_cifar10_data(data_dir):
-    print(f"Loading CIFAR10 data...")
     transform = transforms.Compose([transforms.ToTensor()])
 
     cifar10_train = CIFAR10(data_dir, train=True, transform=transform, download=True)
@@ -107,7 +106,6 @@ def load_cifar10_data(data_dir):
 
 
 def load_cifar100_data(data_dir):
-
     transform = transforms.Compose([transforms.ToTensor()])
 
     cifar100_train = CIFAR100(data_dir, train=True, transform=transform, download=True)

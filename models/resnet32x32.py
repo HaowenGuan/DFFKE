@@ -117,7 +117,7 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNetCifar10(nn.Module):
+class ResNet32x32(nn.Module):
 
     def __init__(
             self,
@@ -130,7 +130,7 @@ class ResNetCifar10(nn.Module):
             replace_stride_with_dilation=None,
             norm_layer=None):
 
-        super(ResNetCifar10, self).__init__()
+        super(ResNet32x32, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
@@ -146,17 +146,23 @@ class ResNetCifar10(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
+        # input shape: N, 3, 32, 32
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
+        # h shape: N, 64, 32, 32
         self.layer1 = self._make_layer(block, 64, layers[0])
+        # h shape: N, 64, 16, 16
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
                                        dilate=replace_stride_with_dilation[0])
+        # h shape: N, 128, 8, 8
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
                                        dilate=replace_stride_with_dilation[1])
+        # h shape: N, 256, 4, 4
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
+        # h shape: N, 512, 2, 2
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -179,20 +185,19 @@ class ResNetCifar10(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
         norm_layer = self._norm_layer
-        downsample = None
+        down_sample = None
         previous_dilation = self.dilation
         if dilate:
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
+            down_sample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
             )
 
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
-                            self.base_width, previous_dilation, norm_layer))
+        layers = [block(self.inplanes, planes, stride, down_sample, self.groups,
+                        self.base_width, previous_dilation, norm_layer)]
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes, groups=self.groups,
@@ -231,24 +236,16 @@ class ResNetCifar10(nn.Module):
         return self._forward_impl(x)
 
 
-def ResNet18_cifar10(**kwargs):
-    r"""ResNet-18 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
+def resnet18_32x32(**kwargs):
     """
-    return ResNetCifar10(BasicBlock, [2, 2, 2, 2], **kwargs)
-
-
-
-def ResNet50_cifar10(**kwargs):
-    r"""ResNet-50 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
+    ResNet-18 model optimized for 32x32 images
     """
-    return ResNetCifar10(Bottleneck, [3, 4, 6, 3], **kwargs)
+    return ResNet32x32(BasicBlock, [2, 2, 2, 2], **kwargs)
+
+
+
+def resnet50_32x32(**kwargs):
+    """
+    ResNet-50 model optimized for 32x32 images
+    """
+    return ResNet32x32(Bottleneck, [3, 4, 6, 3], **kwargs)

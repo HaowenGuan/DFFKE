@@ -24,11 +24,11 @@ def mkdir(dir_path):
 
 def init_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_file', type=str, help='path to the config file')
+    parser.add_argument('--config_file', type=str, default='FC100.yaml', help='path to the config file')
     args = parser.parse_args()
 
     current_folder = os.path.dirname(os.path.abspath(__file__))
-    args.config_file = current_folder + "/configs/FC100.yaml"
+    args.config_file = current_folder + f'/configs/{args["config_file"]}'
     with open(args.config_file, 'r') as file:
         args = yaml.safe_load(file)
 
@@ -76,9 +76,6 @@ def init_wandb(args):
         job_type="CleanRepo",
         name=args['wandb_name'] if args['wandb_name'] else generate_wandb_name(args),
     )
-    # Only use when continue from a previous run
-    for _ in range(0):
-        wandb.log({})
 
 
 def save_checkpoint(args, clients, optimizers, checkpoint_folder):
@@ -179,20 +176,15 @@ def run_experiment(args):
     for client_id, client in clients.items():
         client_optimizers[client_id] = optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
 
-    client_train_transform = client_test_transform = None
-    if args['client_encoder'] == 'resnet18':
-        if args['dataset'] in ['CIFAR10', 'CIFAR100', 'FC100']:
-            transform = get_cifar_transform()
-            client_train_transform = transform['train_transform']
-            client_test_transform = transform['test_transform']
-        elif args['dataset'] == 'miniImageNet':
-            transform = get_mini_image_transform()
-            client_train_transform = transform['train_transform']
-            client_test_transform = transform['test_transform']
-    elif 'clip' in args['client_encoder']:
-        transform = get_vit_original_size_transform()
-        client_train_transform = transform['train_transform']
-        client_test_transform = transform['test_transform']
+    train_transform = test_transform = None
+    if args['dataset'] in ['CIFAR10', 'CIFAR100', 'FC100']:
+        transform = get_cifar_transform()
+        train_transform = transform['train_transform']
+        test_transform = transform['test_transform']
+    elif args['dataset'] == 'miniImageNet':
+        transform = get_mini_image_transform()
+        train_transform = transform['train_transform']
+        test_transform = transform['test_transform']
     else:
         raise ValueError('Unknown encoder')
 
@@ -206,22 +198,22 @@ def run_experiment(args):
         print(sorted(client_class_cnt[client_id], reverse=True))
 
         # Create the private data loader for each client
-        train_dataset = CustomDataset(X_train_client, Y_train_client, transform=client_train_transform)
+        train_dataset = CustomDataset(X_train_client, Y_train_client, transform=train_transform)
         train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
         train_loaders[client_id] = train_loader
 
         # Create the fixed data loader for each client
-        train_dataset = CustomDataset(X_train_client, Y_train_client, transform=client_test_transform)
+        train_dataset = CustomDataset(X_train_client, Y_train_client, transform=test_transform)
         fixed_train_loaders[client_id] = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
 
     # full training set data loader for evaluation purpose
     print(f'>> Full Train Set Size: {len(X_train)}')
-    train_dataset = CustomDataset(X_train, Y_train, transform=client_test_transform)
+    train_dataset = CustomDataset(X_train, Y_train, transform=test_transform)
     full_train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
 
     print(f'>> Full Test Set Size: {len(X_test)}')
-    test_dataset = CustomDataset(X_test, Y_test, transform=client_test_transform)
-    test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=False, num_workers=4)
+    test_dataset = CustomDataset(X_test, Y_test, transform=test_transform)
+    full_test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=False, num_workers=4)
 
     ######################################## Warmup Clients Model ########################################
     # Load the checkpoint if needed
@@ -262,7 +254,7 @@ def run_experiment(args):
                 if client_acc > args['local_acc']:
                     del training_clients[c_id]
                 client.eval()
-                client_loss, client_acc = general_one_epoch(client, test_loader, None, device)
+                client_loss, client_acc = general_one_epoch(client, full_test_loader, None, device)
                 client_testing_loss_acc[c_id] = (client_loss, client_acc)
                 if client_acc > local_aligned_best_test_acc[c_id]:
                     local_aligned_best_test_loss[c_id] = client_loss
@@ -282,8 +274,8 @@ def run_experiment(args):
         print(">> Warmup Clients Finished.")
 
     evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', device)
-    evaluate(clients, test_loader, 'Test', 'Local Aligned', 'cls_test', device)
-    pure_student_evaluation(pure_student, full_train_loader, test_loader, device)
+    evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', device)
+    pure_student_evaluation(pure_student, full_train_loader, full_test_loader, device)
     print("-------------------------------------------------------------------------------------------------")
 
     ######################################## Knowledge Distill ########################################
@@ -323,9 +315,9 @@ def run_experiment(args):
         )
         FKE_clients = {c_id: copy.deepcopy(client) for c_id, client in clients.items()}
 
-        pure_student_evaluation(pure_student, full_train_loader, test_loader, device)
+        pure_student_evaluation(pure_student, full_train_loader, full_test_loader, device)
         evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', device)
-        evaluate(clients, test_loader, 'Test', 'Global Exchanged', 'cls_test', device)
+        evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', device)
         
         if args['review_local_after_knowledge_exchange']:
             training_clients = {c_id: client for c_id, client in clients.items()}
@@ -345,7 +337,7 @@ def run_experiment(args):
                 print(f">> Client Training (Loss,Acc): {train_results[:-1]}")
             
             evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', device)
-            evaluate(clients, test_loader, 'Test', 'Local Aligned', 'cls_test', device)
+            evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', device)
             
         print("-------------------------------------------------------------------------------------------------")
 

@@ -165,7 +165,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         clustering_params = list(cls_layer.parameters())
         for c_id, client in clients.items():
             clustering_params.extend(client.docking.parameters())
-        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-5)
+        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-3)
         for s in tqdm(range(100)):
             clustering_loss = []
             for c_id, client in clients.items():
@@ -300,7 +300,8 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
                     if s_id == t_id:
                         continue
                     _, s_fake_logit = student(fake_data, use_docking=False)
-                    md_loss += inverse_cross_entropy(s_fake_logit, F.softmax(c_fake_logit, dim=1).detach())
+                    # md_loss += inverse_cross_entropy(s_fake_logit, F.softmax(c_fake_logit, dim=1).detach())
+                    md_loss += inverse_cross_entropy(s_fake_logit, c_real_logit)
                 md_loss = md_loss / (len(clients) - 1)
                 md_loss_list.append(md_loss.item())
                 total_loss += md_loss
@@ -343,6 +344,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         fake_target = torch.cat(fake_target, dim=0).cpu()
         fake_datasets[c_id] = FakeDataset(fake_data, fake_emb, fake_logit, fake_target)
         fake_data_loaders[c_id] = DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True)
+
 
         # Preprocess data bank knowledge from each teacher (client)
         if data_banks[c_id]:
@@ -449,38 +451,39 @@ def federated_knowledge_exchange(
                 real_acc_list.append((torch.argmax(c_real_logit, dim=1) == target).float().mean().item())
 
         # Phase B: Review Data Bank Fake Data
-        for data_bank_id, data_bank_inf_loader in data_bank_inf_loaders.items():
-            fake_data, t_fake_emb, t_fake_logit, target = data_bank_inf_loader.get_next()
-            fake_data, t_fake_emb, t_fake_logit, target = fake_data.to(device), t_fake_emb.to(device), t_fake_logit.to(device), target.to(device)
-            for c_id, client, client_optimizer, _ in students:
-                if c_id == data_bank_id:
-                    continue
-                client_optimizer.zero_grad()
-                c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
+        for _ in range(args['G2L_data_bank_iteration']):
+            for data_bank_id, data_bank_inf_loader in data_bank_inf_loaders.items():
+                fake_data, t_fake_emb, t_fake_logit, target = data_bank_inf_loader.get_next()
+                fake_data, t_fake_emb, t_fake_logit, target = fake_data.to(device), t_fake_emb.to(device), t_fake_logit.to(device), target.to(device)
+                for c_id, client, client_optimizer, _ in students:
+                    if c_id == data_bank_id:
+                        continue
+                    client_optimizer.zero_grad()
+                    c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
+                    loss = torch.Tensor([0]).to(device)
+                    if args['G2L_cal_emb_loss']:
+                        emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
+                        db_emb_loss_list.append(emb_loss.item())
+                        loss += emb_loss
+                    logit_loss = F.kl_div(F.log_softmax(c_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
+                    db_logit_loss_list.append(logit_loss.item())
+                    loss += logit_loss
+                    loss.backward()
+                    client_optimizer.step()
+                    db_fake_acc_list.append((torch.argmax(c_fake_logit, dim=1) == target).float().mean().item())
+
+                # Extra: Train Pure Student to examine the performance of Knowledge Exchange
+                pure_student_optimizer.zero_grad()
+                ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
                 loss = torch.Tensor([0]).to(device)
                 if args['G2L_cal_emb_loss']:
-                    emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
-                    db_emb_loss_list.append(emb_loss.item())
-                    loss += emb_loss
-                logit_loss = F.kl_div(F.log_softmax(c_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-                db_logit_loss_list.append(logit_loss.item())
+                    emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
+                    db_ps_emb_loss_list.append(emb_loss.item())
+                logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
+                db_ps_logit_loss_list.append(logit_loss.item())
                 loss += logit_loss
                 loss.backward()
-                client_optimizer.step()
-                db_fake_acc_list.append((torch.argmax(c_fake_logit, dim=1) == target).float().mean().item())
-
-            # Extra: Train Pure Student to examine the performance of Knowledge Exchange
-            pure_student_optimizer.zero_grad()
-            ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
-            loss = torch.Tensor([0]).to(device)
-            if args['G2L_cal_emb_loss']:
-                emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
-                db_ps_emb_loss_list.append(emb_loss.item())
-            logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
-            db_ps_logit_loss_list.append(logit_loss.item())
-            loss += logit_loss
-            loss.backward()
-            pure_student_optimizer.step()
+                pure_student_optimizer.step()
 
         # Phase C: Train Current Fake Data
         for data_bank_id, data_bank_inf_loader in fake_data_inf_loaders.items():
