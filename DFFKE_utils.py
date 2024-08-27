@@ -133,6 +133,39 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
         print(f'>> Saved clients checkpoint to {folder + file_name}.pt')
 
 
+def local_align_clients(clients, optimizers, train_loaders, passing_acc, test_loader, log_wandb=False, device='cpu'):
+    training_clients = {c_id: client for c_id, client in enumerate(clients)}
+    client_training_loss_acc = {}
+    client_testing_loss_acc = {}
+    epoch = 0
+    while len(training_clients) > 0:
+        epoch += 1
+        train_results = ''
+        test_results = ''
+        for c_id, client in list(training_clients.items()):
+            client.train()
+            client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], optimizers[c_id], device)
+            client_training_loss_acc[c_id] = (client_loss, client_acc)
+            if client_acc > passing_acc:
+                del training_clients[c_id]
+            client.eval()
+            if test_loader is not None:
+                client_loss, client_acc = general_one_epoch(client, test_loader, None, device)
+                client_testing_loss_acc[c_id] = (client_loss, client_acc)
+
+        for k, loss_acc in client_training_loss_acc.items():
+            train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+        print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
+
+        if test_loader is not None:
+            for k, loss_acc in client_testing_loss_acc.items():
+                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+            print(f">> Epoch {epoch}, Client Testing (Loss,Acc):  {test_results[:-1]}")
+            if log_wandb:
+                wandb.log({'Local Aligned Test Set Loss': np.mean([x[0] for x in client_testing_loss_acc.values()]),
+                           'Local Aligned Test Set Acc': np.mean([x[1] for x in client_testing_loss_acc.values()])})
+
+
 def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, device='cpu'):
     """
     Evaluate the performance of each client on the given full dataset

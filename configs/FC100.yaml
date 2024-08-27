@@ -21,7 +21,7 @@ FL_algorithm: DFFKE # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 
 ######### DFFKE Setting #########
 warmup_clients: False
-local_acc: 0.95
+local_align_acc: 0.95
 save_clients: False
 knowledge_exchange_rounds: 20
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator

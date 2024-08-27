@@ -74,11 +74,11 @@ class FakeDataset(data.Dataset):
     def __len__(self):
         return len(self.fake_data)
 
-    def update(self, other_dataset: 'FakeDataset'):
-        self.fake_data = np.concatenate((self.fake_data, other_dataset.fake_data))
-        self.emb = np.concatenate((self.emb, other_dataset.emb))
-        self.logit = np.concatenate((self.logit, other_dataset.logit))
-        self.target = np.concatenate((self.target, other_dataset.target))
+    def update(self, other_fake_dataset: 'FakeDataset'):
+        self.fake_data = np.concatenate((self.fake_data, other_fake_dataset.fake_data))
+        self.emb = np.concatenate((self.emb, other_fake_dataset.emb))
+        self.logit = np.concatenate((self.logit, other_fake_dataset.logit))
+        self.target = np.concatenate((self.target, other_fake_dataset.target))
 
 
 class InfiniteDataLoader:

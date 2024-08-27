@@ -13,7 +13,7 @@ from tqdm import tqdm
 from DFFKE_losses import contrastive, inverse_cross_entropy
 from models.model_factory_fn import get_generator, init_client_nets
 from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader
-from DFFKE_utils import mkdir, general_one_epoch, save_checkpoint, evaluate, pure_student_evaluation
+from DFFKE_utils import mkdir, save_checkpoint, local_align_clients, evaluate, pure_student_evaluation
 
 
 def generate_labels(n, class_num):
@@ -368,7 +368,7 @@ def generator_to_local(
         fake_data_loaders.append(DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
         # Preprocess data bank knowledge from each teacher (client)
-        if data_banks[c_id]:
+        if len(data_banks[c_id]) > 0:
             fake_data = []
             fake_emb = []
             fake_logit = []
@@ -584,42 +584,17 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             print(f'>> Loaded.')
 
     # Client local training until converge
-    local_aligned_best_test_loss = [0] * args['n_clients']
-    local_aligned_best_test_acc = [0] * args['n_clients']
     if args['warmup_clients']:
         # Initialize client optimizers
         print(">> Warmup Each Clients:")
-        training_clients = {c_id: client for c_id, client in enumerate(clients)}
-        client_training_loss_acc = {}
-        client_testing_loss_acc = {}
-        epoch = 0
-        while len(training_clients) > 0:
-            epoch += 1
-            train_results = ''
-            test_results = ''
-            for c_id, client in list(training_clients.items()):
-                client.train()
-                client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], client_optimizers[c_id],
-                                                            device)
-                client_training_loss_acc[c_id] = (client_loss, client_acc)
-                if client_acc > args['local_acc']:
-                    del training_clients[c_id]
-                client.eval()
-                client_loss, client_acc = general_one_epoch(client, full_test_loader, None, device)
-                client_testing_loss_acc[c_id] = (client_loss, client_acc)
-                if client_acc > local_aligned_best_test_acc[c_id]:
-                    local_aligned_best_test_loss[c_id] = client_loss
-                    local_aligned_best_test_acc[c_id] = client_acc
-
-            for k, loss_acc in client_training_loss_acc.items():
-                train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
-            print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
-            for k, loss_acc in client_testing_loss_acc.items():
-                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
-            print(f">> Epoch {epoch}, Client Testing (Loss,Acc):  {test_results[:-1]}")
-            if args['log_wandb']:
-                wandb.log({'Local Aligned Best Test Set Loss': np.mean(list(local_aligned_best_test_loss.values())),
-                           'Local Aligned Best Test Set Acc': np.mean(list(local_aligned_best_test_acc.values()))})
+        local_align_clients(
+            clients=clients,
+            optimizers=client_optimizers,
+            train_loaders=train_loaders,
+            passing_acc=args['local_align_acc'],
+            test_loader=full_test_loader,
+            log_wandb=args['log_wandb'],
+            device=device)
 
         save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/')
         print(">> Warmup Clients Finished.")
@@ -632,7 +607,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     ################################################ Knowledge Exchange ################################################
     local_aligned_best_test_loss = [0] * args['n_clients']
     local_aligned_best_test_acc = [0] * args['n_clients']
-    data_banks = [None] * args['n_clients']
+    data_banks = [FakeDataset([], [], [], []) for _ in range(args['n_clients'])]
     knowledge_exchanged_clients = clients.copy()
 
     for round_i in range(args['knowledge_exchange_rounds']):
@@ -693,21 +668,14 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
 
         if args['local_align_after_knowledge_exchange']:
-            training_clients = {c_id: client for c_id, client in enumerate(clients)}
-            client_training_loss_acc = {}
-            while len(training_clients) > 0:
-                train_results = ''
-                for c_id, client in list(training_clients.items()):
-                    client.train()
-                    client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], client_optimizers[c_id], device)
-                    client_training_loss_acc[c_id] = (client_loss, client_acc)
-                    if client_acc > args['local_acc']:
-                        del training_clients[c_id]
-                    client.eval()
-
-                for c_id, loss_acc in client_training_loss_acc.items():
-                    train_results += f'{c_id}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
-                print(f">> Client Training (Loss,Acc): {train_results[:-1]}")
+            local_align_clients(
+                clients=clients,
+                optimizers=client_optimizers,
+                train_loaders=train_loaders,
+                passing_acc=args['local_align_acc'],
+                test_loader=None,
+                log_wandb=args['log_wandb'],
+                device=device)
 
             # Evaluate after local alignment
             evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
