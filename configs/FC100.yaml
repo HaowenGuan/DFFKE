@@ -5,16 +5,27 @@ log_wandb: True
 wandb_project: BlackBoxFL
 wandb_name: testing
 
-######### Switches #########
+######### FL Setting #########
 n_clients: 10
-local_acc: 0.95
-warmup_clients: False
-save_clients: False
+client_encoder: ResNet18_32x32 # ResNet18_32x32
+#client_encoder: clip_vit_tiny
+#client_encoder: vit_base_patch16_clip_224.openai
+seed: 0
+dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
+redo_ds_split: False
+data_dir: ./data/
+data_partition: non_iid_balanced # iid, non_iid_unbalanced, non_iid_balanced
+alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
 
-# DFFKE
+FL_algorithm: DFFKE # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+
+######### DFFKE Setting #########
+warmup_clients: False
+local_acc: 0.95
+save_clients: False
 knowledge_exchange_rounds: 20
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
-review_local_after_knowledge_exchange: True
+local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
 cls_clustering: True
@@ -28,21 +39,13 @@ G2L_data_bank_iteration: 1
 G2L_augment_real: False
 G2L_cal_emb_loss: True
 
+
 checkpoint_dir: ./checkpoints/
 ######### Load Clients checkpoints #########
 #load_clients: null
 load_clients: ./checkpoints/warmup/
 #load_clients: ./checkpoints/knowledge_exchange/
 
-seed: 0
-dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
-redo_ds_split: False
-data_dir: ./data/
-alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
-
-client_encoder: ResNet18_32x32 # ResNet18_32x32
-#client_encoder: clip_vit_tiny
-#client_encoder: vit_base_patch16_clip_224.openai
 
 # Training Hyper-parameters
 client_lr: 0.001

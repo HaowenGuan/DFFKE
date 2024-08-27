@@ -52,7 +52,7 @@ class ServerManager(BaseServer):
 
         self.local_sample_numbers = [len(args.data_distributor.get_client_train_dataloader(client_id).dataset)
                                      for client_id in range(args.client_num)]
-        self.n_class = args.data_distributor.class_num
+        self.n_class = args.data_distributor.n_class
 
         set_seed(args.seed + 657)
 

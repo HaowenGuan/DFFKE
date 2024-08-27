@@ -1,14 +1,19 @@
+import os
+import copy
 import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 import numpy as np
 from torch.utils.data import DataLoader
 from collections import defaultdict
 from tqdm import tqdm
 
 from DFFKE_losses import contrastive, inverse_cross_entropy
+from models.model_factory_fn import get_generator, init_client_nets
 from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader
+from DFFKE_utils import mkdir, general_one_epoch, save_checkpoint, evaluate, pure_student_evaluation
 
 
 def generate_labels(n, class_num):
@@ -111,10 +116,9 @@ def get_soft_batch_weight(soft_labels, class_client_weight):
     return batch_weight
 
 
-def data_free_federated_knowledge_exchange_with_latent_generator(
+def local_to_generator(
         args,
         clients,
-        client_optimizers,
         client_data_loaders,
         client_aug_data_loaders,
         client_class_cnt,
@@ -122,16 +126,14 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         generator_optimizer,
         batch_size,
         L2G_epoch,
-        G2L_epoch,
         pure_student,
-        data_banks,
-        FKE_clients,
+        knowledge_exchanged_clients,
         device='cuda',):
 
     num_clients, num_classes = client_class_cnt.shape
     class_num = np.sum(client_class_cnt, axis=0)
-    client_class_weight = client_class_cnt / (np.tile(class_num[np.newaxis, :], (num_clients, 1)) + 1e-6)
-    class_client_weight = client_class_weight.transpose()
+    # client_class_weight = client_class_cnt / (np.tile(class_num[np.newaxis, :], (num_clients, 1)) + 1e-6)
+    # class_client_weight = client_class_weight.transpose()
     L2G_client_data_loader = client_aug_data_loaders if args['L2G_augment_logits'] else client_data_loaders
 
     ###################################### Clustering Clients Data Distribution ######################################
@@ -246,7 +248,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
         client_emb_logit_loaders.append(DataLoader(emb_logit_set, batch_size=batch_size, shuffle=True, drop_last=True))
 
-    ############################################# L2G: Local to Generator ############################################
+    ################################################ Training Generator ###############################################
 
     wandb_step = wandb.run.step if args['log_wandb'] else 0
     generator.train()
@@ -280,7 +282,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
             # Model Discrepancy Loss
             if args['L2G_use_emb_md_loss']:
                 all_fake_emb = [c_fake_emb]
-                for s_id, student in FKE_clients.items():
+                for s_id, student in knowledge_exchanged_clients.items():
                     if s_id == t_id:
                         continue
                     s_fake_emb, _ = student(fake_data, use_docking=True)
@@ -294,7 +296,7 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
                 total_loss += md_loss
             elif args['L2G_use_logit_md_loss']:
                 md_loss = torch.Tensor([0]).to(device)
-                for s_id, student in enumerate(FKE_clients):
+                for s_id, student in enumerate(knowledge_exchanged_clients):
                     if s_id == t_id:
                         continue
                     _, s_fake_logit = student(fake_data, use_docking=False)
@@ -315,8 +317,30 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
             if md_loss_list:
                 wandb.log({'L2G G md loss': np.mean(md_loss_list)}, step=wandb_step + s)
 
-    ############################################# G2L: Generator to Local ############################################
-    # Generate fake data from generator, preprocess fake data knowledge from each teacher (client)
+    return client_emb_logit_loaders
+
+
+def generator_to_local(
+        args,
+        clients,
+        client_optimizers,
+        client_data_loaders,
+        client_class_cnt,
+        generator,
+        pure_student,
+        data_banks,
+        client_emb_logit_loaders,
+        G2L_epoch,
+        batch_size,
+        device='cpu',):
+
+    for client in clients:
+        client.eval()
+    generator.eval()
+    num_clients, num_classes = client_class_cnt.shape
+
+    ######################################## Generate Fake Data From Generator ########################################
+    # Generate Fake Data From Generator
     fake_datasets = []
     fake_data_loaders = []
     data_bank_loaders = []
@@ -343,7 +367,6 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
         fake_datasets.append(FakeDataset(fake_data, fake_emb, fake_logit, fake_target))
         fake_data_loaders.append(DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
-
         # Preprocess data bank knowledge from each teacher (client)
         if data_banks[c_id]:
             fake_data = []
@@ -364,44 +387,11 @@ def data_free_federated_knowledge_exchange_with_latent_generator(
             data_banks[c_id].target = np.array(torch.cat(fake_target, dim=0).cpu())
             data_bank_loaders.append(DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
-
-    federated_knowledge_exchange(
-        args=args,
-        clients=clients,
-        client_optimizers=client_optimizers,
-        client_data_loaders=client_aug_data_loaders if args['G2L_augment_real'] else client_data_loaders,
-        client_class_cnt=client_class_cnt,
-        fake_data_loaders=fake_data_loaders,
-        data_bank_loaders=data_bank_loaders,
-        G2L_epoch=G2L_epoch,
-        device=device,
-        pure_student=pure_student,
-    )
-
-    for c_id, data_bank in enumerate(data_banks):
-        fake_dataset = fake_datasets[c_id]
-        if data_bank:
-            data_bank.update(fake_dataset)
-        else:
-            data_banks[c_id] = fake_dataset
-
-
-def federated_knowledge_exchange(
-        args,
-        clients,
-        client_optimizers,
-        client_data_loaders,
-        client_class_cnt,
-        fake_data_loaders,
-        data_bank_loaders,
-        G2L_epoch,
-        pure_student,
-        device='cpu',):
+    #################################### Client Knowledge Exchange using Fake Data ####################################
     pure_student.train()
     for client in clients:
         client.train()
 
-    num_clients, num_classes = client_class_cnt.shape
     client_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(client_data_loaders)]
     fake_data_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(fake_data_loaders)]
     data_bank_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(data_bank_loaders) if loader is not None]
@@ -546,3 +536,184 @@ def federated_knowledge_exchange(
                 wandb.log({'G2L Pure Student emb Loss': np.mean(ps_emb_loss_list)}, step=wandb_step + i)
             if ps_logit_loss_list:
                 wandb.log({'G2L Pure Student cls Loss': np.mean(ps_logit_loss_list)}, step=wandb_step + i)
+
+    return fake_datasets
+
+
+def data_free_federated_knowledge_exchange(args, data_distributor):
+    """
+    Main function for Data-Free Federated Knowledge Exchange
+
+    :param args: args dict
+    :param data_distributor: DataDistributor object
+    """
+    device = args['device']
+    print(f'>> Using device {args["device"]}')
+    n_class = data_distributor.n_class
+    train_loaders = data_distributor.client_train_dataloaders
+    fixed_train_loaders = data_distributor.client_fixed_train_loaders
+    full_train_loader = data_distributor.full_train_loader
+    full_test_loader = data_distributor.full_test_loader
+    client_class_cnt = data_distributor.client_class_cnt
+
+    print(">> Initializing clients models")
+    clients = init_client_nets(args['n_clients'] + 1, args['client_encoder'], n_class, device)
+    pure_student = clients[args['n_clients']]
+    clients = clients[:args['n_clients']]
+    client_optimizers = {}
+    for client_id, client in enumerate(clients):
+        client_optimizers[client_id] = optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
+
+    ############################################### Warmup Clients Model ###############################################
+    mkdir(args['checkpoint_dir'])
+    # Load the checkpoint if needed
+    if args['load_clients'] is not None:
+        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        checkpoint_path = args['load_clients'] + file_name + '.pt'
+        # Check if the checkpoint exists
+        if not os.path.exists(checkpoint_path):
+            print(f'>> Checkpoint file {checkpoint_path} does not exist. Skip loading clients.')
+        else:
+            print(f'>> Loading clients checkpoint from {checkpoint_path}')
+            state_dict = torch.load(checkpoint_path)
+            for c_id, client in enumerate(clients):
+                del state_dict[c_id]['model_state_dict']['docking.weight']
+                del state_dict[c_id]['model_state_dict']['docking.bias']
+                client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
+                # client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
+            print(f'>> Loaded.')
+
+    # Client local training until converge
+    local_aligned_best_test_loss = [0] * args['n_clients']
+    local_aligned_best_test_acc = [0] * args['n_clients']
+    if args['warmup_clients']:
+        # Initialize client optimizers
+        print(">> Warmup Each Clients:")
+        training_clients = {c_id: client for c_id, client in enumerate(clients)}
+        client_training_loss_acc = {}
+        client_testing_loss_acc = {}
+        epoch = 0
+        while len(training_clients) > 0:
+            epoch += 1
+            train_results = ''
+            test_results = ''
+            for c_id, client in list(training_clients.items()):
+                client.train()
+                client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], client_optimizers[c_id],
+                                                            device)
+                client_training_loss_acc[c_id] = (client_loss, client_acc)
+                if client_acc > args['local_acc']:
+                    del training_clients[c_id]
+                client.eval()
+                client_loss, client_acc = general_one_epoch(client, full_test_loader, None, device)
+                client_testing_loss_acc[c_id] = (client_loss, client_acc)
+                if client_acc > local_aligned_best_test_acc[c_id]:
+                    local_aligned_best_test_loss[c_id] = client_loss
+                    local_aligned_best_test_acc[c_id] = client_acc
+
+            for k, loss_acc in client_training_loss_acc.items():
+                train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+            print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
+            for k, loss_acc in client_testing_loss_acc.items():
+                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+            print(f">> Epoch {epoch}, Client Testing (Loss,Acc):  {test_results[:-1]}")
+            if args['log_wandb']:
+                wandb.log({'Local Aligned Best Test Set Loss': np.mean(list(local_aligned_best_test_loss.values())),
+                           'Local Aligned Best Test Set Acc': np.mean(list(local_aligned_best_test_acc.values()))})
+
+        save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/')
+        print(">> Warmup Clients Finished.")
+
+    evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+    evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+    pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
+    print("-------------------------------------------------------------------------------------------------")
+
+    ################################################ Knowledge Exchange ################################################
+    local_aligned_best_test_loss = [0] * args['n_clients']
+    local_aligned_best_test_acc = [0] * args['n_clients']
+    data_banks = [None] * args['n_clients']
+    knowledge_exchanged_clients = clients.copy()
+
+    for round_i in range(args['knowledge_exchange_rounds']):
+        print(f'>> Current Round: {round_i}')
+
+        if args['new_client_opt_every_round']:
+            # Get a new client optimizer every round
+            for client_id, client in enumerate(clients):
+                client_optimizers[client_id] = \
+                    optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
+
+        # Get a new generator every round
+        generator = get_generator(model_name=args['generator_model'], nz=clients[0].output.in_features, n_cls=n_class)
+        generator.to(device)
+        generator_optimizer = torch.optim.Adam(generator.parameters(), lr=args['generator_model_lr'])
+
+        # L2G
+        client_emb_logit_loaders = local_to_generator(
+            args=args,
+            clients=clients,
+            client_data_loaders=fixed_train_loaders,
+            client_aug_data_loaders=train_loaders,
+            client_class_cnt=client_class_cnt,
+            generator=generator,
+            generator_optimizer=generator_optimizer,
+            batch_size=args['batch_size'],
+            L2G_epoch=args['L2G_epoch'],
+            device=device,
+            pure_student=pure_student,
+            knowledge_exchanged_clients=knowledge_exchanged_clients,
+        )
+        # G2L
+        fake_datasets = generator_to_local(
+            args=args,
+            clients=clients,
+            client_optimizers=client_optimizers,
+            client_data_loaders=train_loaders if args['G2L_augment_real'] else fixed_train_loaders,
+            client_class_cnt=client_class_cnt,
+            generator=generator,
+            pure_student=pure_student,
+            data_banks=data_banks,
+            client_emb_logit_loaders=client_emb_logit_loaders,
+            G2L_epoch=args['G2L_epoch'],
+            batch_size=args['batch_size'],
+            device=device,
+        )
+        # Finally, add the current fake data into the data bank
+        for c_id, data_bank in enumerate(data_banks):
+            if data_bank:
+                data_bank.update(fake_datasets[c_id])
+            else:
+                data_banks[c_id] = fake_datasets[c_id]
+        # Save a copy of knowledge exchanged clients for next round adversarial loss calculation
+        knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
+        # Evaluate after knowledge exchange
+        pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
+        evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
+        evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
+
+        if args['local_align_after_knowledge_exchange']:
+            training_clients = {c_id: client for c_id, client in enumerate(clients)}
+            client_training_loss_acc = {}
+            while len(training_clients) > 0:
+                train_results = ''
+                for c_id, client in list(training_clients.items()):
+                    client.train()
+                    client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], client_optimizers[c_id], device)
+                    client_training_loss_acc[c_id] = (client_loss, client_acc)
+                    if client_acc > args['local_acc']:
+                        del training_clients[c_id]
+                    client.eval()
+
+                for c_id, loss_acc in client_training_loss_acc.items():
+                    train_results += f'{c_id}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+                print(f">> Client Training (Loss,Acc): {train_results[:-1]}")
+
+            # Evaluate after local alignment
+            evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+            evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+
+        print("-------------------------------------------------------------------------------------------------")
+
+    save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/')
+    print("DFFKE Algorithm Ended.")

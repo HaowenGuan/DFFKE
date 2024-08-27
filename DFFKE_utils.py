@@ -1,7 +1,15 @@
+import os
+import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from tqdm import tqdm
+
+
+def mkdir(dir_path):
+    if not os.path.isdir(dir_path):
+        os.makedirs(dir_path)
 
 
 def general_one_epoch(net, data_loader, optimizer=None, device='cpu'):
@@ -107,3 +115,71 @@ def embedding_test(net, data_loader, use_docking=False, device='cpu'):
         device=device
     )
     return loss, acc
+
+
+def save_checkpoint(args, clients, optimizers, checkpoint_folder):
+    if args['save_clients']:
+        folder = args['checkpoint_dir'] + checkpoint_folder
+        mkdir(folder)
+        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        checkpoint = {}
+        for c_id, client in enumerate(clients):
+            checkpoint[c_id] = {
+                'model_state_dict': client.state_dict(),
+                'optimizer_state_dict': optimizers[c_id].state_dict(),
+            }
+        # Save the checkpoint
+        torch.save(checkpoint, folder + f'{file_name}.pt')
+        print(f'>> Saved clients checkpoint to {folder + file_name}.pt')
+
+
+def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, device='cpu'):
+    """
+    Evaluate the performance of each client on the given full dataset
+    @param clients: dict
+    @param loader: DataLoader
+    @param dataset: 'Train' or 'Test'
+    @param name: Special Prefix, 'Local Aligned' or 'Global Exchanged'
+    @param mode: 'emb_test' or 'cls_test'
+    @param log_wandb: bool
+    @param device: torch.device
+    """
+    print(f"Testing Each Client's Performance on {dataset} Set after {name}")
+    results = ''
+    client_loss_list = []
+    client_acc_list = []
+    client_acc_dict = {}
+    for c_id, client in tqdm(list(enumerate(clients))):
+        client.eval()
+        if mode == 'emb_test':
+            client_loss, client_acc = embedding_test(client, loader, False, device)
+        elif mode == 'cls_test':
+            client_loss, client_acc = general_one_epoch(client, loader, None, device)
+        else:
+            raise ValueError('Unknown mode')
+        results += f'{c_id}:({client_loss:.2f},{client_acc:.2f}) '
+        client_loss_list.append(client_loss)
+        client_acc_list.append(client_acc)
+        client_acc_dict[c_id] = client_acc
+    print(f">> {dataset} Set (Loss,Acc): {results}")
+    print(f'>> Avg:({np.mean(client_loss_list):.2f},{np.mean(client_acc_list):.2f})')
+
+    if log_wandb:
+        wandb.log({
+            f'{name} {dataset} Set Loss': np.mean(client_loss_list),
+            f'{name} {dataset} Set Acc': np.mean(client_acc_list)
+        })
+    return client_acc_dict
+
+
+def pure_student_evaluation(pure_student, train_loader, test_loader, log_wandb=False, device='cpu'):
+    ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
+    print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc:.3f}')
+    ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
+    print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc:.3f}')
+    if log_wandb:
+        wandb.log({
+            'Pure Student Train Set CLS Loss': ps_train_cls_loss,
+            'Pure Student Train Set CLS Acc': ps_train_cls_acc,
+            'Pure Student Test Set CLS Loss': ps_test_cls_loss,
+            'Pure Student Test Set CLS Acc': ps_test_cls_acc,})

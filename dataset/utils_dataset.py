@@ -1,11 +1,13 @@
-from collections import defaultdict
-
-import torch.utils.data as data
+import os
 import numpy as np
+from collections import defaultdict
+import torch
+import torch.utils.data as data
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, CIFAR100
-import os
-import torch
+
+from dataset.transforms import get_cifar_transform, get_mini_image_transform
 
 
 class CustomDataset(data.Dataset):
@@ -92,6 +94,61 @@ class InfiniteDataLoader:
             return next(self.data_iter)
 
 
+class DataDistributor:
+    def __init__(self, args):
+        X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt = get_federated_learning_dataset(
+            dataset=args['dataset'],
+            data_dir=args['data_dir'],
+            n_clients=args['n_clients'],
+            partition_mode=args['data_partition'],
+            alpha=args['alpha'],
+            redo_split=args['redo_ds_split']
+        )
+        X_train, Y_train, _, _, n_class = load_dataset(args['dataset'], args['data_dir'])
+        self.client_class_cnt = client_class_cnt
+        self.n_class = n_class
+
+        if args['dataset'] in ['CIFAR10', 'CIFAR100', 'FC100']:
+            transform = get_cifar_transform()
+            train_transform = transform['train_transform']
+            test_transform = transform['test_transform']
+        elif args['dataset'] == 'miniImageNet':
+            transform = get_mini_image_transform()
+            train_transform = transform['train_transform']
+            test_transform = transform['test_transform']
+        else:
+            raise ValueError('Unknown encoder')
+
+        self.client_train_dataloaders = []
+        self.client_fixed_train_loaders = []
+        for client_id in range(args['n_clients']):
+            # Get the private data for the client
+            X_train_client = X_train_clients[client_id]
+            Y_train_client = Y_train_clients[client_id]
+            print(f'>> Client {client_id} owns {len(X_train_client)} training samples.')
+            print(sorted(client_class_cnt[client_id], reverse=True))
+
+            # Create the private data loader for each client
+            train_dataset = CustomDataset(X_train_client, Y_train_client, transform=train_transform)
+            train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
+            self.client_train_dataloaders.append(train_loader)
+
+            # Create the fixed data loader (without augmentation) for each client
+            train_dataset = CustomDataset(X_train_client, Y_train_client, transform=test_transform)
+            train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
+            self.client_fixed_train_loaders.append(train_loader)
+
+        # full train set data loader for evaluation purpose
+        print(f'>> Full Train Set Size: {len(X_train)}')
+        train_dataset = CustomDataset(X_train, Y_train, transform=test_transform)
+        self.full_train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True, num_workers=4)
+
+        # full test set data loader for evaluation purpose
+        print(f'>> Full Test Set Size: {len(X_test)}')
+        test_dataset = CustomDataset(X_test, Y_test, transform=test_transform)
+        self.full_test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=False, num_workers=4)
+
+
 def load_cifar10_data(data_dir):
     transform = transforms.Compose([transforms.ToTensor()])
 
@@ -163,21 +220,44 @@ def rearrange_data_by_class(data, targets, n_class):
     return new_data
 
 
-def get_federated_learning_dataset(dataset, data_dir, n_clients, alpha=1.0, sampling_ratio=1.0, redo_split=False):
-    buffer_path = data_dir + f'buffer/{dataset}_{n_clients}client_{float(alpha)}alpha-{float(sampling_ratio)}ratio.pt'
+def get_federated_learning_dataset(
+        dataset,
+        data_dir,
+        n_clients,
+        partition_mode,
+        alpha=1.0,
+        sampling_ratio=1.0,
+        redo_split=False):
+    """
+    Get the federated learning dataset by partitioning the data into multiple clients
 
-    if os.path.exists(buffer_path) and not redo_split:
-        print(f'>> Loading buffer dataset from {buffer_path}')
-        buffer = torch.load(buffer_path)
-        X_train_clients = np.array((buffer['X_train_clients'])).copy()
-        Y_train_clients = np.array(buffer['Y_train_clients']).copy()
-        X_test = np.array(buffer['X_test']).copy()
-        Y_test = np.array(buffer['Y_test']).copy()
-        client_class_cnt = np.array(buffer['client_class_cnt']).copy()
-        del buffer
+    :param dataset: Dataset name, (CIFAR10, CIFAR100, FC100)
+    :param data_dir: Directory to save the data
+    :param n_clients: Number of clients
+    :param partition_mode: (iid, non_iid_unbalanced, non_iid_balanced)
+    :param alpha: Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero)
+    :param sampling_ratio: Ratio of training data to be used
+    :param redo_split: If True, overwrite existing split cache
+    :return: X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt
+    """
+    cache_path = data_dir + f'cache/{dataset}_{n_clients}client_{partition_mode}'
+    if partition_mode != 'iid':
+        print(f'>> Split data for FL with Dir({float(alpha)})')
+        cache_path += f'_{float(alpha)}alpha'
+    cache_path += f'_{float(sampling_ratio)}ratio.pt'
+
+    if os.path.exists(cache_path) and not redo_split:
+        print(f'>> Loading buffer dataset from {cache_path}')
+        cache = torch.load(cache_path)
+        X_train_clients = np.array((cache['X_train_clients'])).copy()
+        Y_train_clients = np.array(cache['Y_train_clients']).copy()
+        X_test = np.array(cache['X_test']).copy()
+        Y_test = np.array(cache['Y_test']).copy()
+        client_class_cnt = np.array(cache['client_class_cnt']).copy()
+        del cache
         print(f'>> Loaded.')
     else:
-        print(f'>> Generating new buffer dataset...')
+        print(f'>> Generating new cache dataset...')
         if dataset == 'FC100':
             X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt = \
                 few_shot_partition(dataset, data_dir, 'noniid', n_clients, alpha=alpha)
@@ -186,16 +266,19 @@ def get_federated_learning_dataset(dataset, data_dir, n_clients, alpha=1.0, samp
 
             train_data_by_class = rearrange_data_by_class(X_train, Y_train, n_class)
 
-            X_train_clients, Y_train_clients, client_class_cnt = dirichlet_split_data(
-                data_by_class=train_data_by_class,
-                n_sample=len(X_train),
-                n_class=n_class,
-                n_clients=n_clients,
-                alpha=alpha,
-                sampling_ratio=sampling_ratio
-            )
+            if partition_mode == 'non_iid_balanced':
+                X_train_clients, Y_train_clients, client_class_cnt = dirichlet_split_data(
+                    data_by_class=train_data_by_class,
+                    n_sample=len(X_train),
+                    n_class=n_class,
+                    n_clients=n_clients,
+                    alpha=alpha,
+                    sampling_ratio=sampling_ratio
+                )
+            else:
+                raise ValueError(f"Partition mode {partition_mode} is not supported yet.")
 
-        buffer = {
+        cache = {
             'X_train_clients': X_train_clients,
             'Y_train_clients': Y_train_clients,
             'X_test': X_test,
@@ -203,11 +286,11 @@ def get_federated_learning_dataset(dataset, data_dir, n_clients, alpha=1.0, samp
             'client_class_cnt': client_class_cnt
         }
 
-        if not os.path.isdir(data_dir + '/buffer'):
-            os.makedirs(data_dir + '/buffer')
+        if not os.path.isdir(data_dir + '/cache'):
+            os.makedirs(data_dir + '/cache')
 
-        torch.save(buffer, buffer_path)
-        print(f">> New buffer dataset saved to {buffer_path}")
+        torch.save(cache, cache_path)
+        print(f">> New cache dataset saved to {cache_path}")
 
     return X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt
 
@@ -320,7 +403,7 @@ def few_shot_partition(dataset, data_dir, partition, n_clients, alpha=1.0, seed=
 
     return X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt
 
-
+########################################## CIFAR100 Few Shot Partition ##########################################
 # There are 100 classes and 20 Superclasses in CIFAR100
 fine_id_coarse_id = {0: 4, 1: 1, 2: 14, 3: 8, 4: 0, 5: 6, 6: 7, 7: 7, 8: 18, 9: 3, 10: 3, 11: 14, 12: 9, 13: 18,
                      14: 7, 15: 11, 16: 3, 17: 9, 18: 7, 19: 11, 20: 6, 21: 11, 22: 5, 23: 10, 24: 7, 25: 6,
@@ -344,3 +427,4 @@ for fine_id, sparse_id in fine_id_coarse_id.items():
         fine_split['valid'].append(fine_id)
     else:
         fine_split['test'].append(fine_id)
+#################################################################################################################

@@ -82,8 +82,8 @@ class DataDistributor:
         self.client_num = args.client_num
         self.batch_size = args.batch_size
 
-        self.class_num = None
-        self.x_shape = None  
+        self.n_class = None
+        self.x_shape = None
         self.client_train_dataloaders = []
         self.client_test_dataloaders = []
         self.train_dataloaders = None
@@ -110,7 +110,7 @@ class DataDistributor:
         return self.test_dataloaders
 
     def _load_MNIST(self):
-        self.class_num = 10
+        self.n_class = 10
         self.x_shape = (1, 28, 28)
 
 
@@ -161,7 +161,7 @@ class DataDistributor:
             self.client_test_dataloaders.append(_test_dataloader)
 
     def _load_FMNIST(self):
-        self.class_num = 10
+        self.n_class = 10
         self.x_shape = (1, 32, 32)
         if not os.path.exists(f"{self.dataset_dir}/FMNIST/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth"):
             transform = transforms.Compose([transforms.Resize(32), 
@@ -225,7 +225,7 @@ class DataDistributor:
 
 
     def _load_CIFAR10(self):
-        self.class_num = 10
+        self.n_class = 10
         self.x_shape = (3, 32, 32)
 
         if not os.path.exists(f"{self.dataset_dir}/CIFAR-10/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth"):
@@ -298,7 +298,7 @@ class DataDistributor:
             self.client_train_dataloaders ,self.client_test_dataloaders, self.client_label_list, self.client_test_label_list = torch.load(f"{self.dataset_dir}/CIFAR-10/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth")
 
     def _load_CIFAR100(self):
-        self.class_num = 100
+        self.n_class = 100
         self.x_shape = (3, 32, 32)
         if not os.path.exists(f"{self.dataset_dir}/CIFAR-100/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth"):
             mean = [0.5070751592371323, 0.48654887331495095, 0.4409178433670343]
@@ -372,7 +372,7 @@ class DataDistributor:
 
     
     def _load_SVHN(self):
-        self.class_num = 10
+        self.n_class = 10
         self.x_shape = (3, 32, 32)
         if not os.path.exists(f"{self.dataset_dir}/SVHN/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth"):
             mean = [0.5, 0.5, 0.5]
@@ -446,7 +446,7 @@ class DataDistributor:
 
     
     def _load_FOOD101(self):
-        self.class_num = 101
+        self.n_class = 101
         self.x_shape = (3, 64, 64)
         
         if not os.path.exists(f"{self.dataset_dir}/Food101/client_{self.args.data_set}_{self.args.data_partition_mode}_{self.args.non_iid_alpha}_{self.args.client_num}_{self.args.seed}.pth"):
@@ -519,7 +519,7 @@ class DataDistributor:
 
 
     def _load_Tiny_Imagenet(self):
-        self.class_num = 200
+        self.n_class = 200
         self.x_shape = (3, 64, 64)
 
         mean = [0.485, 0.456, 0.406]
@@ -542,7 +542,7 @@ class DataDistributor:
 
             self.train_data, self.train_targets, self.test_data, self.test_targets = self.download_data(train_dir, test_dir)
 
-            class_set = list(range(self.class_num))
+            class_set = list(range(self.n_class))
             trainfolder = self.get_dataset(train_transform, index=class_set, train=True)
             testfolder = self.get_dataset(test_transform, index=class_set, train=False)
 
@@ -655,7 +655,7 @@ class DataDistributor:
 
     def _split_dataset(self, train_dataset, test_dataset):
         if self.args.data_partition_mode == 'iid':
-            partition_proportions = np.full(shape=(self.class_num, self.client_num), fill_value=1/self.client_num)
+            partition_proportions = np.full(shape=(self.n_class, self.client_num), fill_value=1/self.client_num)
             client_train_datasets, client_label_list = self._split_dataset_iid(train_dataset, partition_proportions)
 
         elif self.args.data_partition_mode == 'non_iid_dirichlet_unbalanced':
@@ -666,7 +666,7 @@ class DataDistributor:
         else:
             raise Exception(f"unknow data_partition_mode:{self.args.data_partition_mode}")
 
-        partition_proportions = np.full(shape=(self.class_num, self.client_num), fill_value=1 / self.client_num)
+        partition_proportions = np.full(shape=(self.n_class, self.client_num), fill_value=1 / self.client_num)
         client_test_datasets, self.client_test_label_list = self._split_dataset_iid(test_dataset, partition_proportions)
         
         return client_train_datasets, client_test_datasets, client_label_list
@@ -797,7 +797,7 @@ class DataDistributor:
             data_labels = dataset.targets
 
         class_idcs = [list(np.argwhere(np.array(data_labels) == y).flatten())
-                      for y in range(self.class_num)]
+                      for y in range(self.n_class)]
 
         client_idcs = [[] for _ in range(self.client_num)]
 
