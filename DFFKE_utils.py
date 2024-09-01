@@ -103,8 +103,8 @@ def embedding_test(net, data_loader, use_docking=False, device='cpu'):
     Test the model's embedding output in classification task
     """
     output_layer = nn.Linear(net.output.in_features, net.output.out_features).to(device)
-    # # With lower lr, the ACC can go as high as 0.32 for a Naive model on CIFAR-100 dataset
-    # # However, we want to efficiently evaluate embedding quality, getting high ACC is not the goal
+    # With lower lr, the ACC can go as high as 0.32 for a Naive model on CIFAR-100 dataset
+    # However, we want to efficiently evaluate embedding quality, getting high ACC is not the goal
     loss, acc = train_output_layer(
         net=net,
         data_loader=data_loader,

@@ -1,13 +1,15 @@
 ######### System #########
 device: cuda
 cuda_gpu: 0
-log_wandb: True
+log_wandb: False
 wandb_project: BlackBoxFL
 wandb_name: testing
 
+FL_algorithm: DFRD # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+
 ######### FL Setting #########
 n_clients: 10
-client_encoder: ResNet18_32x32 # ResNet18_32x32
+client_encoder: ResNet18 # ResNet18, ResNet18_32x32
 #client_encoder: clip_vit_tiny
 #client_encoder: vit_base_patch16_clip_224.openai
 seed: 0
@@ -16,8 +18,6 @@ redo_ds_split: False
 data_dir: ./data/
 data_partition: non_iid_balanced # iid, non_iid_unbalanced, non_iid_balanced
 alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
-
-FL_algorithm: DFFKE # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 
 ######### DFFKE Setting #########
 warmup_clients: False
@@ -29,11 +29,11 @@ local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
 cls_clustering: True
-L2G_epoch: 1
+L2G_epoch: 6
 L2G_augment_logits: False
 L2G_use_emb_md_loss: False  #\ Only One
 L2G_use_logit_md_loss: True #/ Only One
-G2L_epoch: 1
+G2L_epoch: 4
 G2L_local_review_iteration: 1
 G2L_data_bank_iteration: 1
 G2L_augment_real: False

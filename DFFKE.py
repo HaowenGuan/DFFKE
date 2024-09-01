@@ -550,7 +550,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     device = args['device']
     print(f'>> Using device {args["device"]}')
     n_class = data_distributor.n_class
-    train_loaders = data_distributor.client_train_dataloaders
+    train_loaders = data_distributor.client_train_loaders
     fixed_train_loaders = data_distributor.client_fixed_train_loaders
     full_train_loader = data_distributor.full_train_loader
     full_test_loader = data_distributor.full_test_loader

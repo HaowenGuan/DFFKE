@@ -84,7 +84,14 @@ def run_experiment(args):
 
     if args['FL_algorithm'] == 'DFFKE':
         data_free_federated_knowledge_exchange(args, data_distributor)
-
+    elif args['FL_algorithm'] == 'FedAvg':
+        from baselines import federated_average
+        federated_average(args, data_distributor)
+    elif args['FL_algorithm'] == 'DFRD':
+        from baselines.DFRD.main_DFRD import DFRD
+        DFRD(args, data_distributor)
+    else:
+        raise ValueError('FL_algorithm not supported')
 
 if __name__ == '__main__':
     args = init_args()
