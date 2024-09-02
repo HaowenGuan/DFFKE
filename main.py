@@ -15,6 +15,7 @@ from baseline_main import run_baseline
 
 def init_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--group_experiment', type=str, default=None, help='group experiment name / folder name')
     parser.add_argument('--config_file', type=str, default='DFFKE.yaml', help='path to the config file')
     args = parser.parse_args()
 

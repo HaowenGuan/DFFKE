@@ -17,8 +17,8 @@ import PIL.Image
 import sys
 import os
 # Get the parent directory
-torch_utils_dir = os.path.dirname(os.path.realpath('stylegan/stylegan-utils/torch_utils'))
-dnnlib_dir = os.path.dirname(os.path.realpath('stylegan/stylegan-utils/dnnlib'))
+torch_utils_dir = os.path.dirname(os.path.realpath('models/stylegan-utils/torch_utils'))
+dnnlib_dir = os.path.dirname(os.path.realpath('models/stylegan-utils/dnnlib'))
 # Add the parent directory to sys.path
 sys.path.append(torch_utils_dir)
 sys.path.append(dnnlib_dir)
@@ -62,15 +62,15 @@ class FedKTL(Server):
             with open(args.generator_path, 'rb') as f:
                 G = pickle.load(f)['G_ema'].to(self.device)
             save_item(G, self.role, 'G', self.save_folder_name)
-            print('Generator', G)
+            # print('Generator', G)
 
             F = Feature_Transformer(self.ETF_dim, G.w_dim).to(self.device)
             save_item(F, self.role, 'F', self.save_folder_name)
-            print('Feature_Transformer', F)
+            # print('Feature_Transformer', F)
 
             Centroids = nn.Embedding(self.num_classes, G.w_dim).to(self.device)
             save_item(Centroids, self.role, 'Centroids', self.save_folder_name)
-            print('Centroids', Centroids)
+            # print('Centroids', Centroids)
 
             while True:
                 try:

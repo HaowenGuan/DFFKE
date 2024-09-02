@@ -63,7 +63,7 @@ server_epochs: 1
 margin_threthold: 100.0
 
 ######### FedKTL #########
-generator_path: stylegan/stylegan-xl-models/imagenet64.pkl
+generator_path: checkpoints/stylegan-xl-models/imagenet64.pkl
 stable_diffusion_prompt: a cat
 server_batch_size: 100
 gen_batch_size: 4

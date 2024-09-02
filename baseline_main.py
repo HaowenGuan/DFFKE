@@ -281,7 +281,7 @@ def start(args):
     reporter.report()
 
 
-def run_baseline(config_file=None):
+def run_baseline(config_args=None):
     parser = argparse.ArgumentParser()
     # general
     parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg")
@@ -351,13 +351,13 @@ def run_baseline(config_file=None):
                         help="Not related to the performance. A small value saves GPU memory.")
     parser.add_argument('-mu', "--mu", type=float, default=50.0)
 
-    args = parser.parse_args()
-
-    # Load the configuration from a yaml file
-    if config_file is not None:
-        with open(config_file, 'r') as file:
-            config_dict = yaml.safe_load(file)
-        for key, value in config_dict.items():
+    if config_args is None:
+        args = parser.parse_args()
+    else:
+        # If config_args is given, parse does not read from command line
+        args = parser.parse_args(args=[])
+        # Load the configuration from a yaml file
+        for key, value in config_args.items():
             if hasattr(args, key):
                 setattr(args, key, value)
 

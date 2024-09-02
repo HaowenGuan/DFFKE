@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-device_id: 0
+device_id: 1
 log_wandb: True
 wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated
@@ -25,7 +25,7 @@ text_max_len: 200
 ######### FL Dataset Setting #########
 dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
 num_classes: 100
-use_data_distributor: True # If False, dataset must be prepared using generate files in dataset directory
+use_data_distributor: False # If False, dataset must be prepared using generate files in dataset directory
 data_dir: ./data/
 data_partition: non_iid_balanced # iid, non_iid_unbalanced, non_iid_balanced
 alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
@@ -62,7 +62,7 @@ T_end: 0.98
 margin_threthold: 100.0
 
 ######### FedKTL #########
-generator_path: stylegan/stylegan-xl-models/imagenet64.pkl
+generator_path: checkpoints/stylegan-xl-models/imagenet64.pkl
 stable_diffusion_prompt: a cat
 server_learning_rate: 0.01
 server_batch_size: 100
