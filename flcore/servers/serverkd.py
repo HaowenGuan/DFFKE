@@ -21,7 +21,7 @@ class FedKD(Server):
         self.set_slow_clients()
         self.set_clients(clientKD)
 
-        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
+        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.n_clients}")
         print("Finished creating server and clients.")
 
         # self.load_model()
@@ -57,7 +57,7 @@ class FedKD(Server):
             self.Budget.append(time.time() - s_t)
             print('-'*25, 'time cost', '-'*25, self.Budget[-1])
 
-            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
+            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], auto_break_patient=self.auto_break_patient):
                 break
 
             self.energy = self.T_start + ((1 + i) / self.global_rounds) * (self.T_end - self.T_start)

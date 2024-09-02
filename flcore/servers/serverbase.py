@@ -2,11 +2,10 @@ import torch
 import os
 import numpy as np
 import h5py
-import copy
 import time
 import random
 import shutil
-from utils.data_utils import read_client_data, DataDistributor, read_client_data_custom
+from utils.data_utils import read_client_data, read_client_data_custom
 from flcore.clients.clientbase import load_item, save_item
 
 
@@ -21,17 +20,15 @@ class Server(object):
         self.global_rounds = args.global_rounds
         self.local_epochs = args.local_epochs
         self.batch_size = args.batch_size
-        self.learning_rate = args.local_learning_rate
-        self.num_clients = args.num_clients
+        self.learning_rate = args.client_lr
+        self.n_clients = args.n_clients
         self.join_ratio = args.join_ratio
         self.random_join_ratio = args.random_join_ratio
-        self.num_join_clients = int(self.num_clients * self.join_ratio)
+        self.num_join_clients = int(self.n_clients * self.join_ratio)
         self.current_num_join_clients = self.num_join_clients
         self.algorithm = args.algorithm
-        self.time_select = args.time_select
-        self.goal = args.goal
-        self.time_threthold = args.time_threthold
-        self.top_cnt = 10
+        self.experiment_name = args.experiment_name
+        self.auto_break_patient = args.auto_break_patient
         self.auto_break = args.auto_break
         self.role = 'Server'
         if args.save_folder_name == 'temp':
@@ -62,7 +59,7 @@ class Server(object):
 
 
     def set_clients(self, clientObj):
-        for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
+        for i, train_slow, send_slow in zip(range(self.n_clients), self.train_slow_clients, self.send_slow_clients):
             if self.data_distributor:
                 train_data = read_client_data_custom(self.data_distributor, i, is_train=True)
                 test_data = read_client_data_custom(self.data_distributor, i, is_train=False)
@@ -79,23 +76,21 @@ class Server(object):
 
     # random select slow clients
     def select_slow_clients(self, slow_rate):
-        slow_clients = [False for i in range(self.num_clients)]
-        idx = [i for i in range(self.num_clients)]
-        idx_ = np.random.choice(idx, int(slow_rate * self.num_clients))
+        slow_clients = [False for i in range(self.n_clients)]
+        idx = [i for i in range(self.n_clients)]
+        idx_ = np.random.choice(idx, int(slow_rate * self.n_clients))
         for i in idx_:
             slow_clients[i] = True
 
         return slow_clients
 
     def set_slow_clients(self):
-        self.train_slow_clients = self.select_slow_clients(
-            self.train_slow_rate)
-        self.send_slow_clients = self.select_slow_clients(
-            self.send_slow_rate)
+        self.train_slow_clients = self.select_slow_clients(self.train_slow_rate)
+        self.send_slow_clients = self.select_slow_clients(self.send_slow_rate)
 
     def select_clients(self):
         if self.random_join_ratio:
-            self.current_num_join_clients = np.random.choice(range(self.num_join_clients, self.num_clients+1), 1, replace=False)[0]
+            self.current_num_join_clients = np.random.choice(range(self.num_join_clients, self.n_clients + 1), 1, replace=False)[0]
         else:
             self.current_num_join_clients = self.num_join_clients
         selected_clients = list(np.random.choice(self.clients, self.current_num_join_clients, replace=False))
@@ -151,8 +146,8 @@ class Server(object):
         if not os.path.exists(result_path):
             os.makedirs(result_path)
 
-        if (len(self.rs_test_acc)):
-            algo = algo + "_" + self.goal + "_" + str(self.times)
+        if len(self.rs_test_acc):
+            algo = algo + "_" + self.experiment_name + "_" + str(self.times)
             file_path = result_path + "{}.h5".format(algo)
             print("File path: " + file_path)
 
@@ -218,38 +213,28 @@ class Server(object):
         #     loss.append(train_loss)
 
         # print("Averaged Train Loss: {:.4f}".format(train_loss))
-        print("Averaged Test Accurancy: {:.4f}".format(test_acc))
+        print("Averaged Test Accuracy: {:.4f}".format(test_acc))
         print("Averaged Test AUC: {:.4f}".format(test_auc))
         # self.print_(test_acc, train_acc, train_loss)
-        print("Std Test Accurancy: {:.4f}".format(np.std(accs)))
+        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
         print("Std Test AUC: {:.4f}".format(np.std(aucs)))
 
     def print_(self, test_acc, test_auc, train_loss):
-        print("Average Test Accurancy: {:.4f}".format(test_acc))
+        print("Average Test Accuracy: {:.4f}".format(test_acc))
         print("Average Test AUC: {:.4f}".format(test_auc))
         print("Average Train Loss: {:.4f}".format(train_loss))
 
-    def check_done(self, acc_lss, top_cnt=None, div_value=None):
+    def check_done(self, acc_lss, auto_break_patient=None, div_value=None):
         for acc_ls in acc_lss:
-            if top_cnt != None and div_value != None:
-                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > top_cnt
-                find_div = len(acc_ls) > 1 and np.std(acc_ls[-top_cnt:]) < div_value
-                if find_top and find_div:
-                    pass
-                else:
-                    return False
-            elif top_cnt != None:
-                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > top_cnt
-                if find_top:
-                    pass
-                else:
-                    return False
-            elif div_value != None:
-                find_div = len(acc_ls) > 1 and np.std(acc_ls[-top_cnt:]) < div_value
-                if find_div:
-                    pass
-                else:
-                    return False
+            if auto_break_patient is not None and div_value is not None:
+                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > auto_break_patient
+                find_div = len(acc_ls) > 1 and np.std(acc_ls[-auto_break_patient:]) < div_value
+                return find_top and find_div
+            elif auto_break_patient is not None:
+                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > auto_break_patient
+                return find_top
+            elif div_value is not None:
+                find_div = len(acc_ls) > 1 and np.std(acc_ls[-auto_break_patient:]) < div_value
+                return find_div
             else:
                 raise NotImplementedError
-        return True

@@ -6,10 +6,12 @@ import random
 import torch.nn.functional as F
 
 
-def DiffAugment(x, types=[], prob=0.5, detach=True):
+def DiffAugment(x, types=None, prob=0.5, detach=True):
   """
   x.shape = B, C, H, W
   """
+  if types is None:
+    types = []
   if random.random() < prob:
     with torch.set_grad_enabled(not detach):
       x = random_hflip(x, prob=0.5)

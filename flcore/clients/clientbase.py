@@ -30,7 +30,7 @@ class Client(object):
         self.train_samples = train_samples
         self.test_samples = test_samples
         self.batch_size = args.batch_size
-        self.learning_rate = args.local_learning_rate
+        self.learning_rate = args.client_lr
         self.local_epochs = args.local_epochs
 
         if args.save_folder_name == 'temp' or 'temp' not in args.save_folder_name:
@@ -49,18 +49,16 @@ class Client(object):
         if batch_size == None:
             batch_size = self.batch_size
         if self.data_distributor:
-            train_data = read_client_data_custom(self.data_distributor, self.id, is_train=True)
-        else:
-            train_data = read_client_data(self.dataset, self.id, is_train=True)
+            return self.data_distributor.get_client_train_loader(self.id)
+        train_data = read_client_data(self.dataset, self.id, is_train=True)
         return DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
 
     def load_test_data(self, batch_size=None):
         if batch_size == None:
             batch_size = self.batch_size
         if self.data_distributor:
-            test_data = read_client_data_custom(self.data_distributor, self.id, is_train=False)
-        else:
-            test_data = read_client_data(self.dataset, self.id, is_train=False)
+            return self.data_distributor.get_client_test_loader(self.id)
+        test_data = read_client_data(self.dataset, self.id, is_train=False)
         return DataLoader(test_data, batch_size, drop_last=False, shuffle=False)
 
     def clone_model(self, model, target):

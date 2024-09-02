@@ -18,17 +18,17 @@ class FedTGP(Server):
         self.set_slow_clients()
         self.set_clients(clientTGP)
 
-        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
+        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.n_clients}")
         print("Finished creating server and clients.")
 
         # self.load_model()
         self.Budget = []
         self.num_classes = args.num_classes
 
-        self.server_learning_rate = args.local_learning_rate
+        self.server_learning_rate = args.client_lr
         self.batch_size = args.batch_size
         self.server_epochs = args.server_epochs
-        self.margin_threthold = args.margin_threthold
+        self.margin_threshold = args.margin_threshold
 
         self.feature_dim = args.feature_dim
         self.server_hidden_dim = self.feature_dim
@@ -74,7 +74,7 @@ class FedTGP(Server):
             self.Budget.append(time.time() - s_t)
             print('-'*50, self.Budget[-1])
 
-            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
+            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], auto_break_patient=self.auto_break_patient):
                 break
 
         print("\nBest accuracy.")
@@ -136,7 +136,7 @@ class FedTGP(Server):
                 dist = torch.sqrt(dist)
                 
                 one_hot = F.one_hot(y, self.num_classes).to(self.device)
-                gap2 = min(self.max_gap.item(), self.margin_threthold)
+                gap2 = min(self.max_gap.item(), self.margin_threshold)
                 dist = dist + one_hot * gap2
                 loss = self.CEloss(-dist, y)
 

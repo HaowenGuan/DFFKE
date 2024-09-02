@@ -1,4 +1,6 @@
 import os
+import time
+
 import yaml
 import wandb
 import random
@@ -8,19 +10,21 @@ import torch
 
 from DFFKE import data_free_federated_knowledge_exchange
 from dataset.utils_dataset import DataDistributor
+from baseline_main import run_baseline
 
 
 def init_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_file', type=str, default='FC100.yaml', help='path to the config file')
+    parser.add_argument('--config_file', type=str, default='DFFKE.yaml', help='path to the config file')
     args = parser.parse_args()
 
     current_folder = os.path.dirname(os.path.abspath(__file__))
-    args.config_file = current_folder + f'/configs/{args.config_file}'
-    with open(args.config_file, 'r') as file:
+    config_file = current_folder + f'/configs/{args.config_file}'
+    with open(config_file, 'r') as file:
         args = yaml.safe_load(file)
+    args['config_file'] = config_file
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(args['cuda_gpu'])
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(args['device_id'])
 
     if not torch.cuda.is_available():
         args['device'] = 'cpu'
@@ -28,7 +32,7 @@ def init_args():
 
 
 def generate_wandb_name(args):
-    name = ''
+    name = f'{args["algorithm"]} / '
     if args['knowledge_exchange_rounds'] > 0:
         name += args['generator_model'] + ' / '
         name += 'DFFKE'
@@ -67,8 +71,6 @@ def init_wandb(args):
 
 
 def run_experiment(args):
-    import os
-    # Set random seed
     torch.manual_seed(args['seed'])
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args['seed'])
@@ -80,18 +82,15 @@ def run_experiment(args):
 
     print(args)
 
-    data_distributor = DataDistributor(args)
-
-    if args['FL_algorithm'] == 'DFFKE':
+    if args['algorithm'] == 'DFFKE':
+        data_distributor = DataDistributor(args)
         data_free_federated_knowledge_exchange(args, data_distributor)
-    elif args['FL_algorithm'] == 'FedAvg':
-        from baselines import federated_average
-        federated_average(args, data_distributor)
-    elif args['FL_algorithm'] == 'DFRD':
+    elif args['algorithm'] == 'DFRD':
         from baselines.DFRD.main_DFRD import DFRD
+        data_distributor = DataDistributor(args)
         DFRD(args, data_distributor)
     else:
-        raise ValueError('FL_algorithm not supported')
+        run_baseline(args['config_file'])
 
 if __name__ == '__main__':
     args = init_args()

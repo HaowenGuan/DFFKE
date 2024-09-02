@@ -1,0 +1,104 @@
+######### System #########
+device: cuda
+device_id: 0
+log_wandb: False
+wandb_project: BlackBoxFL
+wandb_name: null # If null, name will be automatically generated
+
+seed: 0
+n_clients: 10
+algorithm: LG-FedAvg # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+
+######### Baseline General #########
+experiment_name: test
+model_family: HtFE1
+global_rounds: 110
+local_epochs: 1
+eval_gap: 5
+save_folder_name: temp
+auto_break: false
+auto_break_patient: 10
+feature_dim: 512
+vocab_size: 98635
+text_max_len: 200
+
+######### FL Dataset Setting #########
+dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100
+num_classes: 100
+use_data_distributor: True # If False, dataset must be prepared using generate files in dataset directory
+data_dir: ./data/
+data_partition: non_iid_balanced # iid, non_iid_unbalanced, non_iid_balanced
+alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
+redo_ds_split: False
+
+# Training Hyper-parameters
+client_lr: 0.005 # 0.005 for all baseline SGD optimizer, 0.001 for DFFKE
+generator_model_lr: 0.001
+reg: 1.0e-05
+batch_size: 10 # 10 for all baseline algorithms, 100 for DFFKE
+
+######### FedProto #########
+lamda: 1.0
+
+######### FedGen #########
+noise_dim: 512
+generator_learning_rate: 0.005
+hidden_dim: 512
+server_epochs: 100
+
+######### FML #########
+#alpha: 1.0
+beta: 1.0
+
+######### FedKD #########
+mentee_learning_rate: 0.005
+T_start: 0.95
+T_end: 0.98
+
+######### FedGH #########
+server_learning_rate: 0.01
+
+######### FedTGP #########
+margin_threthold: 100.0
+
+######### FedKTL #########
+generator_path: stylegan/stylegan-xl-models/imagenet64.pkl
+stable_diffusion_prompt: a cat
+server_batch_size: 100
+gen_batch_size: 4
+mu: 50.0
+
+
+######### DFFKE Setting #########
+client_encoder: ResNet18 # ResNet18, ResNet18_32x32
+warmup_clients: False
+local_align_acc: 0.95
+save_clients: False
+knowledge_exchange_rounds: 20
+generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
+local_align_after_knowledge_exchange: True
+new_client_opt_every_round: True
+dock_kd: True # Dock or Emb
+cls_clustering: True
+L2G_epoch: 6
+L2G_augment_logits: False
+L2G_use_emb_md_loss: False  #\ Only One
+L2G_use_logit_md_loss: True #/ Only One
+G2L_epoch: 4
+G2L_local_review_iteration: 1
+G2L_data_bank_iteration: 1
+G2L_augment_real: False
+G2L_cal_emb_loss: True
+
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/
+
+######### FL Scenario #########
+client_drop_rate: 0.0
+train_slow_rate: 0.0
+send_slow_rate: 0.0
+join_ratio: 1.0
+random_join_ratio: false

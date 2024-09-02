@@ -147,8 +147,7 @@ class ResNet32x32(nn.Module):
         self.groups = groups
         self.base_width = width_per_group
         # input shape: N, 3, 32, 32
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         # h shape: N, 64, 32, 32
@@ -227,8 +226,7 @@ class ResNet32x32(nn.Module):
         x = torch.flatten(x, 1)
         # x shape: N, 512
         x = self.fc(x)
-        # x shape: N, number of classes
-        exit(0)
+        # x shape: N, n_class
 
         return x
 

@@ -1,5 +1,5 @@
 from collections import defaultdict
-
+from tqdm import tqdm
 import numpy as np
 import os
 import torch
@@ -90,7 +90,7 @@ class DataDistributor:
         X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt = get_federated_learning_dataset(
             dataset=args.dataset,
             data_dir='../data/',
-            n_clients=args.num_clients,
+            n_clients=args.n_clients,
             partition_mode='non_iid_balanced',
             alpha=args.alpha,
             redo_split=False
@@ -99,22 +99,22 @@ class DataDistributor:
         X_train, Y_train, _, _, n_class = load_dataset(args.dataset, '../data')
         self.client_class_cnt = client_class_cnt
         self.n_class = n_class
-        self.client_label_list = [[] for _ in range(args.num_clients)]
+        self.client_label_list = [[] for _ in range(args.n_clients)]
         for i, l in enumerate(self.client_class_cnt):
             for cls, cnt in enumerate(l):
                 if cnt:
                     self.client_label_list[i].append(cls)
 
-        if args.dataset in ['Cifar10', 'Cifar100', 'FC100']:
+        if args.dataset in ['CIFAR10', 'CIFAR100', 'FC100']:
             transform = get_cifar_transform()
             train_transform = transform['train_transform']
             test_transform = transform['test_transform']
         else:
-            raise ValueError('Unknown encoder')
+            raise ValueError(f'Unknown Dataset: {args.dataset}')
 
         self.client_train_loaders = []
         self.client_fixed_train_loaders = []
-        for client_id in range(args.num_clients):
+        for client_id in range(args.n_clients):
             # Get the private data for the client
             X_train_client = X_train_clients[client_id]
             Y_train_client = Y_train_clients[client_id]
@@ -309,10 +309,10 @@ def load_fc100_data(data_dir):
 
 
 def load_dataset(dataset, data_dir):
-    if dataset == 'Cifar10':
+    if dataset == 'CIFAR10':
         print(f"Loading CIFAR10 data...")
         return load_cifar10_data(data_dir)
-    elif dataset == 'Cifar100':
+    elif dataset == 'CIFAR100':
         print(f"Loading CIFAR100 data...")
         return load_cifar100_data(data_dir)
     elif dataset == 'FC100':
@@ -432,7 +432,7 @@ def iid_partition(data_by_class, n_class, n_clients):
     X = [[] for _ in range(n_clients)]
     Y = [[] for _ in range(n_clients)]
     client_class_cnt = np.zeros((n_clients, n_class), dtype='int64')
-    for cls in data_by_class:
+    for cls in tqdm(data_by_class):
         idx_list = np.arange(len(data_by_class[cls]))
         np.random.shuffle(idx_list)
         split_idx_list = np.array_split(idx_list, n_clients)
@@ -463,7 +463,7 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
     client_class_cnt = np.zeros((n_clients, n_class), dtype='int64')
     samples_per_client = [0] * n_clients
     limit = int(sample_ratio * n_sample / n_clients)
-    for cls in data_by_class:
+    for cls in tqdm(data_by_class):
         # get indices for all that label
         idx_list = np.arange(len(data_by_class[cls]))
         np.random.shuffle(idx_list)
@@ -498,7 +498,6 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
                 Y[c_id].append(cls * np.ones(len(c_idx_list), dtype='int64'))
                 client_class_cnt[c_id][cls] += len(c_idx_list)
                 samples_per_client[c_id] += len(c_idx_list)
-        print(f'Class {cls} done!')
     # Convert data to numpy array and return
     return [np.concatenate(l) for l in X], [np.concatenate(l) for l in Y], client_class_cnt
 

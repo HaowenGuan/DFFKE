@@ -15,7 +15,7 @@ class LG_FedAvg(Server):
         self.set_slow_clients()
         self.set_clients(clientLG)
 
-        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
+        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.n_clients}")
         print("Finished creating server and clients.")
 
         # self.load_model()
@@ -29,7 +29,7 @@ class LG_FedAvg(Server):
         for i in range(self.global_rounds+1):
             s_t = time.time()
             self.selected_clients = self.select_clients()
-            # self.send_parameters()
+            self.send_parameters()
 
             if i%self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
@@ -45,12 +45,12 @@ class LG_FedAvg(Server):
             # [t.join() for t in threads]
 
             self.receive_ids()
-            # self.aggregate_parameters()
+            self.aggregate_parameters()
 
             self.Budget.append(time.time() - s_t)
             print('-'*25, 'time cost', '-'*25, self.Budget[-1])
 
-            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
+            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], auto_break_patient=self.auto_break_patient):
                 break
 
         print("\nBest accuracy.")
