@@ -7,7 +7,7 @@ wandb_name: null # If null, name will be automatically generated
 
 seed: 0
 n_clients: 10
-algorithm: Local # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+algorithm: FedGen # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 
 ######### Baseline General #########
 experiment_name: test
@@ -42,8 +42,8 @@ reg: 1.0e-05
 lamda: 1.0
 
 ######### FedGen #########
-noise_dim: 512
-generator_learning_rate: 0.005
+noise_dim: 32
+generator_learning_rate: 0.1
 hidden_dim: 512
 server_epochs: 100
 

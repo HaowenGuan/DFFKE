@@ -19,9 +19,10 @@ class clientProto(Client):
     def train(self):
         trainloader = self.load_train_data()
         model = load_item(self.role, 'model', self.save_folder_name)
+        model.to(self.device)
         global_protos = load_item('Server', 'global_protos', self.save_folder_name)
-        optimizer = torch.optim.SGD(model.parameters(), lr=self.learning_rate)
-        # model.to(self.device)
+        # optimizer = torch.optim.SGD(model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
         model.train()
 
         start_time = time.time()

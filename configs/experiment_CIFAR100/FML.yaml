@@ -7,7 +7,7 @@ wandb_name: null # If null, name will be automatically generated
 
 seed: 0
 n_clients: 10
-algorithm: Local # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+algorithm: FML # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 
 ######### Baseline General #########
 experiment_name: test
@@ -38,7 +38,7 @@ generator_model_lr: 0.001
 reg: 1.0e-05
 
 
-######### FedProto / FedDistill #########
+######### FedProto #########
 lamda: 1.0
 
 ######### FedGen #########
@@ -48,8 +48,8 @@ hidden_dim: 512
 server_epochs: 100
 
 ######### FML #########
-fml_alpha: 1.0
-fml_beta: 1.0
+fml_alpha: 0.5
+fml_beta: 0.5
 
 ######### FedKD #########
 mentee_learning_rate: 0.005

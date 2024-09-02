@@ -71,9 +71,9 @@ class Client(object):
             param.data = new_param.data.clone()
 
     def test_metrics(self):
-        testloaderfull = self.load_test_data()
+        full_test_loader = self.load_test_data()
         model = load_item(self.role, 'model', self.save_folder_name)
-        # model.to(self.device)
+        model.to(self.device)
         model.eval()
 
         test_acc = 0
@@ -82,11 +82,12 @@ class Client(object):
         y_true = []
         
         with torch.no_grad():
-            for x, y in testloaderfull:
-                if type(x) == type([]):
-                    x[0] = x[0].to(self.device)
-                else:
-                    x = x.to(self.device)
+            for x, y in full_test_loader:
+                # if type(x) == type([]):
+                #     x[0] = x[0].to(self.device)
+                # else:
+                #     x = x.to(self.device)
+                x = x.to(self.device)
                 y = y.to(self.device)
                 output = model(x)
 
@@ -112,7 +113,7 @@ class Client(object):
     def train_metrics(self):
         trainloader = self.load_train_data()
         model = load_item(self.role, 'model', self.save_folder_name)
-        # model.to(self.device)
+        model.to(self.device)
         model.eval()
 
         train_num = 0

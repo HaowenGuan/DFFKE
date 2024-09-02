@@ -18,12 +18,12 @@ class clientDistill(Client):
     def train(self):
         trainloader = self.load_train_data()
         model = load_item(self.role, 'model', self.save_folder_name)
-        optimizer = torch.optim.SGD(model.parameters(), lr=self.learning_rate)
+        model.to(self.device)
+        # optimizer = torch.optim.SGD(model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
         global_logits = load_item('Server', 'global_logits', self.save_folder_name)
-        
         start_time = time.time()
 
-        # model.to(self.device)
         model.train()
 
         max_local_epochs = self.local_epochs
@@ -33,13 +33,13 @@ class clientDistill(Client):
         logits = defaultdict(list)
         for step in range(max_local_epochs):
             for i, (x, y) in enumerate(trainloader):
-                if type(x) == type([]):
-                    x[0] = x[0].to(self.device)
-                else:
-                    x = x.to(self.device)
+                # if type(x) == type([]):
+                #     x[0] = x[0].to(self.device)
+                # else:
+                x = x.to(self.device)
                 y = y.to(self.device)
-                if self.train_slow:
-                    time.sleep(0.1 * np.abs(np.random.rand()))
+                # if self.train_slow:
+                #     time.sleep(0.1 * np.abs(np.random.rand()))
                 output = model(x)
                 loss = self.loss(output, y)
 

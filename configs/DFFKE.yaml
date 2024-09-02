@@ -1,8 +1,8 @@
 ######### System #########
 device: cuda
 device_id: 0
-log_wandb: False
-wandb_project: BlackBoxFL
+log_wandb: True
+wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated
 
 seed: 0
@@ -12,11 +12,11 @@ algorithm: DFFKE # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 ######### Baseline General #########
 experiment_name: test
 model_family: HtFE1
-global_rounds: 110
+global_rounds: 100
 local_epochs: 1
 eval_gap: 5
 save_folder_name: temp
-auto_break: false
+auto_break: True
 auto_break_patient: 10
 feature_dim: 512
 vocab_size: 98635
@@ -32,12 +32,12 @@ alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 1
 redo_ds_split: False
 
 # Training Hyper-parameters
-client_lr: 0.005 # 0.005 for all baseline SGD optimizer, 0.001 for DFFKE
+batch_size: 100 # 10 for all baseline algorithms, 100 for DFFKE
+client_lr: 0.001 # 0.01 for all baseline SGD optimizer, 0.001 for DFFKE
 generator_model_lr: 0.001
 reg: 1.0e-05
-batch_size: 10 # 10 for all baseline algorithms, 100 for DFFKE
 
-######### FedProto #########
+######### FedProto / FedDistill #########
 lamda: 1.0
 
 ######### FedGen #########
@@ -47,8 +47,8 @@ hidden_dim: 512
 server_epochs: 100
 
 ######### FML #########
-#alpha: 1.0
-beta: 1.0
+fml_alpha: 1.0
+fml_beta: 1.0
 
 ######### FedKD #########
 mentee_learning_rate: 0.005

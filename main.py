@@ -33,7 +33,7 @@ def init_args():
 
 def generate_wandb_name(args):
     name = f'{args["algorithm"]} / '
-    if args['knowledge_exchange_rounds'] > 0:
+    if args["algorithm"] == 'DFFKE' and args['knowledge_exchange_rounds'] > 0:
         name += args['generator_model'] + ' / '
         name += 'DFFKE'
         if args['local_align_after_knowledge_exchange']:
@@ -95,3 +95,4 @@ def run_experiment(args):
 if __name__ == '__main__':
     args = init_args()
     run_experiment(args)
+    print('Experiment Complete.')

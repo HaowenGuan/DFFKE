@@ -46,8 +46,8 @@ def start(args):
         if args.model_family == "HtFE1":
             args.models = [
                 # 'torchvision.models.resnet18(pretrained=False, num_classes=args.num_classes)',
-                # 'resnet18_32x32()',
-                'resnet18()',
+                'resnet18_32x32()',
+                # 'resnet18()',
             ]
 
         elif args.model_family == "HtFE2":
@@ -292,11 +292,12 @@ def run_baseline(config_file=None):
     parser.add_argument('-did', "--device_id", type=str, default="0")
     parser.add_argument('-seed', "--seed", type=int, default=0)
     parser.add_argument('-data', "--dataset", type=str, default="mnist")
+    parser.add_argument('-alpha', "--alpha", type=float, default=1.0)
     parser.add_argument('-udd', "--use_data_distributor", type=bool, default=True)
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model_family", type=str, default="cnn")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
-    parser.add_argument('-lr', "--client_lr", type=float, default=0.005,
+    parser.add_argument('-lr', "--client_lr", type=float, default=0.01,
                         help="Local learning rate")
     parser.add_argument('-gr', "--global_rounds", type=int, default=110)
     parser.add_argument('-ls', "--local_epochs", type=int, default=1,
@@ -332,8 +333,8 @@ def run_baseline(config_file=None):
     parser.add_argument('-hd', "--hidden_dim", type=int, default=512)
     parser.add_argument('-se', "--server_epochs", type=int, default=100)
     # FML
-    parser.add_argument('-al', "--alpha", type=float, default=1.0)
-    parser.add_argument('-bt', "--beta", type=float, default=1.0)
+    parser.add_argument('-al', "--fml_alpha", type=float, default=1.0)
+    parser.add_argument('-bt', "--fml_beta", type=float, default=1.0)
     # FedKD
     parser.add_argument('-mlr', "--mentee_learning_rate", type=float, default=0.005)
     parser.add_argument('-Ts', "--T_start", type=float, default=0.95)

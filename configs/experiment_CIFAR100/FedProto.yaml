@@ -7,7 +7,7 @@ wandb_name: null # If null, name will be automatically generated
 
 seed: 0
 n_clients: 10
-algorithm: Local # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+algorithm: FedProto # DFFKE / FedAvg / DFRD / FedFTG / DENSE
 
 ######### Baseline General #########
 experiment_name: test
@@ -39,7 +39,7 @@ reg: 1.0e-05
 
 
 ######### FedProto / FedDistill #########
-lamda: 1.0
+lamda: 10.0
 
 ######### FedGen #########
 noise_dim: 512
