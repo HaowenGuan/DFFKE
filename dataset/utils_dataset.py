@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from tqdm import tqdm
 from collections import defaultdict
 import torch
 import torch.utils.data as data
@@ -153,6 +154,34 @@ class DataDistributor:
         test_dataset = CustomDataset(X_test, Y_test, transform=test_transform)
         self.full_test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=False, num_workers=4)
 
+        torch.multiprocessing.set_sharing_strategy('file_system')
+        self.X_train_clients = []
+        self.Y_train_clients = []
+        for loader in self.client_fixed_train_loaders:
+            X = []
+            Y = []
+            for x, y in loader:
+                X.append(x)
+                Y.append(y)
+            X = torch.cat(X, dim=0).detach().cpu()
+            Y = torch.cat(Y, dim=0).detach().cpu()
+            self.X_train_clients.append(X)
+            self.Y_train_clients.append(Y)
+
+        self.X_test = []
+        self.Y_test = []
+        for x, y in self.full_test_loader:
+            self.X_test.append(x.detach().cpu())
+            self.Y_test.append(y.detach().cpu())
+        self.X_test = torch.cat(self.X_test, dim=0)
+        self.Y_test = torch.cat(self.Y_test, dim=0)
+
+    def get_client_train_data(self, client_id):
+        return self.X_train_clients[client_id], self.Y_train_clients[client_id]
+
+    def get_client_test_data(self, client_id):
+        return self.X_test, self.Y_test
+
     def get_client_train_loader(self, client_id):
         return self.client_train_loaders[client_id]
 
@@ -167,18 +196,6 @@ class DataDistributor:
 
     def get_test_loader(self):
         return self.full_test_loader
-
-    # def get_train_dataloader(self):
-    #     return self.full_train_loader
-    #
-    # def get_test_dataloader(self):
-    #     return self.full_test_loader
-    #
-    # def get_client_train_dataloader(self, client_id):
-    #     return self.client_train_dataloaders[client_id]
-    #
-    # def get_client_test_dataloader(self, client_id):
-    #     return self.client_test_dataloaders[client_id]
 
 
 def load_cifar10_data(data_dir):
@@ -296,6 +313,7 @@ def get_federated_learning_dataset(
         del cache
         print(f'>> Loaded.')
     else:
+        print(f'Cache file {cache_path} not found.')
         print(f'>> Generating new cache dataset...')
         X_train, Y_train, X_test, Y_test, n_class = load_dataset(dataset, data_dir)
         if dataset == 'FC100':
@@ -324,19 +342,19 @@ def get_federated_learning_dataset(
         else:
             raise ValueError(f"Partition mode {partition_mode} is not supported yet.")
 
-    cache = {
-        'X_train_clients': X_train_clients,
-        'Y_train_clients': Y_train_clients,
-        'X_test': X_test,
-        'Y_test': Y_test,
-        'client_class_cnt': client_class_cnt
-    }
+        cache = {
+            'X_train_clients': X_train_clients,
+            'Y_train_clients': Y_train_clients,
+            'X_test': X_test,
+            'Y_test': Y_test,
+            'client_class_cnt': client_class_cnt
+        }
 
-    if not os.path.isdir(data_dir + '/cache'):
-        os.makedirs(data_dir + '/cache')
+        if not os.path.isdir(data_dir + '/cache'):
+            os.makedirs(data_dir + '/cache')
 
-    torch.save(cache, cache_path)
-    print(f">> New cache dataset saved to {cache_path}")
+        torch.save(cache, cache_path)
+        print(f">> New cache dataset saved to {cache_path}")
 
     return X_train_clients, Y_train_clients, X_test, Y_test, client_class_cnt
 
@@ -346,14 +364,14 @@ def iid_partition(data_by_class, n_class, n_clients):
     Split the train data into n_clients with iid distribution
 
     :param data_by_class: Dict of numpy array, each array contains all the data of one class
-    :param n_class: List of classes
+    :param n_class: Number of classes
     :param n_clients: Number of clients
     :return: X: list of clients' data, Y: list of clients' label, client_class_cnt: (client x class) count matrix
     """
     X = [[] for _ in range(n_clients)]
     Y = [[] for _ in range(n_clients)]
     client_class_cnt = np.zeros((n_clients, n_class), dtype='int64')
-    for cls in data_by_class:
+    for cls in tqdm(data_by_class):
         idx_list = np.arange(len(data_by_class[cls]))
         np.random.shuffle(idx_list)
         split_idx_list = np.array_split(idx_list, n_clients)
@@ -372,7 +390,7 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
 
     @param data_by_class: Dict of numpy array, each array contains all the data of one class
     @param n_sample: Number of total samples in train data
-    @param n_class: List of classes
+    @param n_class: Number of classes
     @param n_clients: Number of clients
     @param alpha: Parameter for dirichlet distribution, the smaller the alpha, the more unbalanced the data
     @param balance: If True, balance the data distribution so each client has the same number of samples
@@ -384,7 +402,7 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
     client_class_cnt = np.zeros((n_clients, n_class), dtype='int64')
     samples_per_client = [0] * n_clients
     limit = int(sample_ratio * n_sample / n_clients)
-    for cls in data_by_class:
+    for cls in tqdm(list(data_by_class)):
         # get indices for all that label
         idx_list = np.arange(len(data_by_class[cls]))
         np.random.shuffle(idx_list)
@@ -401,7 +419,7 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
                     if distribution[c_id] == 0: continue
                     assign_size = min(limit - samples_per_client[c_id],
                                       int(distribution[c_id] / cumulative_distribution[c_id] * len(idx_list)))
-                    if assign_size == 0:
+                    if samples_per_client[c_id] == limit:
                         distribution[c_id] = 0
                         continue
                     X[c_id].append(data_by_class[cls][idx_list[:assign_size]])
@@ -420,6 +438,7 @@ def non_iid_dirichlet_partition(data_by_class, n_sample, n_class, n_clients, alp
                 samples_per_client[c_id] += len(c_idx_list)
     # Convert data to numpy array and return
     return [np.concatenate(l) for l in X], [np.concatenate(l) for l in Y], client_class_cnt
+
 
 ########################################## CIFAR100 Few Shot Partition ##########################################
 # There are 100 classes and 20 Superclasses in CIFAR100

@@ -1,0 +1,3 @@
+algorithm: FedDistill
+######### FedProto / FedDistill #########
+lamda: 1.0

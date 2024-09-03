@@ -1,0 +1,10 @@
+algorithm: FedKTL-stylegan-xl
+######### FedKTL #########
+generator_path: checkpoints/stylegan-xl-models/imagenet64.pkl
+stable_diffusion_prompt: a cat
+server_learning_rate: 0.01
+server_batch_size: 100
+server_epochs: 100
+lamda: 1.0
+gen_batch_size: 4
+mu: 50.0

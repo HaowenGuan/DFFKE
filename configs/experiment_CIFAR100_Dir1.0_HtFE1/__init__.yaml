@@ -3,14 +3,14 @@ device: cuda
 device_id: 0
 log_wandb: True
 wandb_project: DFFKE
-wandb_name: null # If null, name will be automatically generated
+wandb_name: null # If null, name will be automatically generated based on configuration
 
 seed: 0
 n_clients: 10
-algorithm: FML # DFFKE / FedAvg / DFRD / FedFTG / DENSE
+algorithm: null # Local / DFFKE / LG-FedAvg / FedGen / FedGH / FML / FedKD / FedDistill / FedProto / FedKTL-stylegan-xl
 
 ######### Baseline General #########
-experiment_name: test
+experiment_name: CIFAR100_Dir_1.0
 model_family: HtFE1
 global_rounds: 200
 local_epochs: 1
@@ -37,8 +37,7 @@ client_lr: 0.01 # 0.01 for all baseline SGD optimizer, 0.001 for DFFKE
 generator_model_lr: 0.001
 reg: 1.0e-05
 
-
-######### FedProto #########
+######### FedProto / FedDistill #########
 lamda: 1.0
 
 ######### FedGen #########
@@ -48,8 +47,8 @@ hidden_dim: 512
 server_epochs: 100
 
 ######### FML #########
-fml_alpha: 0.5
-fml_beta: 0.5
+fml_alpha: 1.0
+fml_beta: 1.0
 
 ######### FedKD #########
 mentee_learning_rate: 0.005

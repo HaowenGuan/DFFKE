@@ -1,13 +1,11 @@
-import copy
 import torch
 import torch.nn as nn
 import numpy as np
 import os
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import label_binarize
 from sklearn import metrics
-from utils.data_utils import read_client_data, read_client_data_custom
+from utils.data_utils import read_client_data
 from flcore.trainmodel.models import BaseHeadSplit
 
 
@@ -46,7 +44,7 @@ class Client(object):
 
 
     def load_train_data(self, batch_size=None):
-        if batch_size == None:
+        if batch_size is None:
             batch_size = self.batch_size
         if self.data_distributor:
             return self.data_distributor.get_client_train_loader(self.id)
@@ -54,7 +52,7 @@ class Client(object):
         return DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
 
     def load_test_data(self, batch_size=None):
-        if batch_size == None:
+        if batch_size is None:
             batch_size = self.batch_size
         if self.data_distributor:
             return self.data_distributor.get_client_test_loader(self.id)

@@ -80,9 +80,7 @@ def train_output_layer(
         total_loss /= data_num
         total_acc /= data_num
 
-        # print(f'Iter {i}: loss={total_loss:.4f}, acc={total_acc:.4f}')
         if total_acc > best_acc:
-        # if total_loss < best_loss:
             best_loss = total_loss
             best_acc = total_acc
             wait = 0
@@ -145,21 +143,21 @@ def local_align_clients(clients, optimizers, train_loaders, passing_acc, test_lo
         for c_id, client in list(training_clients.items()):
             client.train()
             client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], optimizers[c_id], device)
-            client_training_loss_acc[c_id] = (client_loss, client_acc)
+            client_training_loss_acc[c_id] = (client_loss, client_acc * 100)
             if client_acc > passing_acc:
                 del training_clients[c_id]
             client.eval()
             if test_loader is not None:
                 client_loss, client_acc = general_one_epoch(client, test_loader, None, device)
-                client_testing_loss_acc[c_id] = (client_loss, client_acc)
+                client_testing_loss_acc[c_id] = (client_loss, client_acc * 100)
 
         for k, loss_acc in client_training_loss_acc.items():
-            train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+            train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.1f}) '
         print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
 
         if test_loader is not None:
             for k, loss_acc in client_testing_loss_acc.items():
-                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.1f}) '
             print(f">> Epoch {epoch}, Client Testing (Loss,Acc):  {test_results[:-1]}")
             if log_wandb:
                 wandb.log({'Local Aligned Test Set Loss': np.mean([x[0] for x in client_testing_loss_acc.values()]),
@@ -190,12 +188,12 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
             client_loss, client_acc = general_one_epoch(client, loader, None, device)
         else:
             raise ValueError('Unknown mode')
-        results += f'{c_id}:({client_loss:.2f},{client_acc:.2f}) '
+        results += f'{c_id}:({client_loss:.2f},{client_acc * 100:.1f}) '
         client_loss_list.append(client_loss)
-        client_acc_list.append(client_acc)
+        client_acc_list.append(client_acc * 100)
         client_acc_dict[c_id] = client_acc
     print(f">> {dataset} Set (Loss,Acc): {results}")
-    print(f'>> Avg:({np.mean(client_loss_list):.2f},{np.mean(client_acc_list):.2f})')
+    print(f'>> Avg (Loss, Acc, Std):({np.mean(client_loss_list):.2f}, {np.mean(client_acc_list):.2f}, {np.std(client_acc_list):.2f})')
 
     if log_wandb:
         wandb.log({
@@ -207,12 +205,12 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
 
 def pure_student_evaluation(pure_student, train_loader, test_loader, log_wandb=False, device='cpu'):
     ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
-    print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc:.3f}')
+    print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc * 100:.2f}')
     ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
-    print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc:.3f}')
+    print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc * 100:.2f}')
     if log_wandb:
         wandb.log({
             'Pure Student Train Set CLS Loss': ps_train_cls_loss,
-            'Pure Student Train Set CLS Acc': ps_train_cls_acc,
+            'Pure Student Train Set CLS Acc': ps_train_cls_acc * 100,
             'Pure Student Test Set CLS Loss': ps_test_cls_loss,
-            'Pure Student Test Set CLS Acc': ps_test_cls_acc,})
+            'Pure Student Test Set CLS Acc': ps_test_cls_acc * 100,})

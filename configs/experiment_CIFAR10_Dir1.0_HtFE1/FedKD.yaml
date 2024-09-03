@@ -1,0 +1,5 @@
+algorithm: FedKD
+######### FedKD #########
+mentee_learning_rate: 0.01
+T_start: 0.95
+T_end: 0.98

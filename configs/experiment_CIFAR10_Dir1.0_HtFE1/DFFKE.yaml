@@ -1,0 +1,28 @@
+algorithm: DFFKE
+######### DFFKE Setting #########
+client_lr: 0.001 # 0.01 for all baseline SGD optimizer, 0.001 for DFFKE
+client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
+warmup_clients: True
+local_align_acc: 0.95
+save_clients: False
+knowledge_exchange_rounds: 20
+generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
+local_align_after_knowledge_exchange: True
+new_client_opt_every_round: True
+dock_kd: True # Dock or Emb
+cls_clustering: True
+L2G_epoch: 6
+L2G_augment_logits: False
+L2G_use_emb_md_loss: False  #\ Only One
+L2G_use_logit_md_loss: True #/ Only One
+G2L_epoch: 4
+G2L_local_review_iteration: 1
+G2L_data_bank_iteration: 1
+G2L_augment_real: False
+G2L_cal_emb_loss: True
+
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+load_clients: null
+#load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/

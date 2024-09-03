@@ -548,7 +548,6 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     :param data_distributor: DataDistributor object
     """
     device = args['device']
-    print(f'>> Using device {args["device"]}')
     n_class = data_distributor.n_class
     train_loaders = data_distributor.client_train_loaders
     fixed_train_loaders = data_distributor.client_fixed_train_loaders

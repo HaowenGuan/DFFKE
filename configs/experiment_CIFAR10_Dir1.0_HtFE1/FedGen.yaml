@@ -1,0 +1,6 @@
+algorithm: FedGen
+######### FedGen #########
+noise_dim: 32
+generator_learning_rate: 0.1
+hidden_dim: 512
+server_epochs: 100

@@ -25,7 +25,7 @@ def get_all_results_for_one_algo(algorithm="", dataset="", experiment_name="", t
 
 
 def read_data_then_delete(file_name, delete=False):
-    file_path = "../results/" + file_name + ".h5"
+    file_path = "./results/" + file_name + ".h5"
 
     with h5py.File(file_path, 'r') as hf:
         rs_test_acc = np.array(hf.get('rs_test_acc'))

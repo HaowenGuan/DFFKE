@@ -21,7 +21,8 @@ from flcore.servers.servertgp import FedTGP
 from flcore.servers.serverktl_stylegan_xl import FedKTL as FedKTL_stylegan_xl
 from flcore.servers.serverktl_stylegan_3 import FedKTL as FedKTL_stylegan_3
 from flcore.servers.serverktl_stable_diffusion import FedKTL as FedKTL_stable_diffusion
-from utils.data_utils import DataDistributor
+# from utils.data_utils import DataDistributor
+from dataset.utils_dataset import DataDistributor
 
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
@@ -292,6 +293,10 @@ def run_baseline(config_args=None):
     parser.add_argument('-did', "--device_id", type=str, default="0")
     parser.add_argument('-seed', "--seed", type=int, default=0)
     parser.add_argument('-data', "--dataset", type=str, default="mnist")
+    parser.add_argument('-data_dir', "--data_dir", type=str, default="./data/")
+    parser.add_argument('-dp', "--data_partition", type=str, default="non_iid_balanced",
+                        help="(iid, non_iid_unbalanced, non_iid_balanced)")
+    parser.add_argument('-rds', "--redo_data_split", type=bool, default=False)
     parser.add_argument('-alpha', "--alpha", type=float, default=1.0)
     parser.add_argument('-udd', "--use_data_distributor", type=bool, default=True)
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
@@ -358,8 +363,7 @@ def run_baseline(config_args=None):
         args = parser.parse_args(args=[])
         # Load the configuration from a yaml file
         for key, value in config_args.items():
-            if hasattr(args, key):
-                setattr(args, key, value)
+            setattr(args, key, value)
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -389,7 +393,7 @@ def run_baseline(config_args=None):
     print("=" * 50)
 
     if args.use_data_distributor:
-        args.data_distributor = DataDistributor(args)
+        args.data_distributor = DataDistributor(vars(args))
     else:
         args.data_distributor = None
 
