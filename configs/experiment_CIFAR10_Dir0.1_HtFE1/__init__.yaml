@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-device_id: 2
+device_id: 0
 log_wandb: True
 wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated based on configuration
@@ -19,6 +19,7 @@ save_folder_name: temp
 auto_break: True
 auto_break_patient: 10
 feature_dim: 512
+result_dir: ./results/
 vocab_size: 98635
 text_max_len: 200
 

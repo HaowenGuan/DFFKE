@@ -318,7 +318,7 @@ def run_baseline(config_args=None):
     parser.add_argument('-fd', "--feature_dim", type=int, default=512)
     parser.add_argument('-vs', "--vocab_size", type=int, default=98635)
     parser.add_argument('-ml', "--text_max_len", type=int, default=200)
-    parser.add_argument('-cf', "--config_file", type=str, default="configs/template.json")
+    parser.add_argument('-r_dir', "--result_dir", type=str, default="./results/")
     # practical
     parser.add_argument('-jr', "--join_ratio", type=float, default=1.0,
                         help="Ratio of clients per round")

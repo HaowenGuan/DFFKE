@@ -21,6 +21,7 @@ class FedGH(Server):
 
         # self.load_model()
         self.Budget = []
+        self.auto_break_patient *= 2  # Due to Testing twice each round
         self.CEloss = nn.CrossEntropyLoss()
         self.server_learning_rate = args.server_learning_rate
         self.server_epochs = args.server_epochs
@@ -35,19 +36,18 @@ class FedGH(Server):
             self.selected_clients = self.select_clients()
             self.send_parameters()
 
-            if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate heterogeneous models")
+            print(f"\n-------------Round number: {i}-------------")
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after FedGH")
                 self.evaluate()
 
             for client in self.selected_clients:
                 client.train()
                 client.collect_protos()
 
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after Local Training")
+                self.evaluate()
 
             self.receive_protos()
             self.train_head()
@@ -59,9 +59,8 @@ class FedGH(Server):
                 break
 
         print("\nBest accuracy.")
-        # self.print_(max(self.rs_test_acc), max(
-        #     self.rs_train_acc), min(self.rs_train_loss))
-        print(max(self.rs_test_acc))
+        print(f'{max(self.rs_test_acc):.2f}')
+        print("Average time cost per round.")
         print(sum(self.Budget[1:])/len(self.Budget[1:]))
 
         self.save_results()

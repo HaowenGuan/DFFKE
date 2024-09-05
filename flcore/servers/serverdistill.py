@@ -1,4 +1,3 @@
-
 import time
 import numpy as np
 from flcore.clients.clientdistill import clientDistill
@@ -22,6 +21,7 @@ class FedDistill(Server):
         # self.load_model()
         self.Budget = []
         self.num_classes = args.num_classes
+        self.auto_break_patient *= 2 # Due to Testing twice each round
 
 
     def train(self):
@@ -29,31 +29,30 @@ class FedDistill(Server):
             s_t = time.time()
             self.selected_clients = self.select_clients()
 
-            if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate heterogeneous models")
+            print(f"\n-------------Round number: {i}-------------")
+
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models Before Local Training")
                 self.evaluate()
 
             for client in self.selected_clients:
                 client.train()
 
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models Before Local Training")
+                self.evaluate()
 
             self.receive_logits()
 
             self.Budget.append(time.time() - s_t)
-            print('-'*50, self.Budget[-1])
+            print('-'*25, 'time cost', '-'*25, self.Budget[-1])
 
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], auto_break_patient=self.auto_break_patient):
                 break
 
         print("\nBest accuracy.")
-        # self.print_(max(self.rs_test_acc), max(
-        #     self.rs_train_acc), min(self.rs_train_loss))
-        print(max(self.rs_test_acc))
+        print(f'{max(self.rs_test_acc):.2f}')
+        print("Average time cost per round.")
         print(sum(self.Budget[1:])/len(self.Budget[1:]))
 
         self.save_results()

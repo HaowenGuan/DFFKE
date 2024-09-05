@@ -31,18 +31,14 @@ class FML(Server):
             s_t = time.time()
             self.selected_clients = self.select_clients()
 
-            if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate heterogeneous models")
-                self.evaluate()
+            print(f"\n-------------Round number: {i}-------------")
 
             for client in self.selected_clients:
                 client.train()
 
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after local training")
+                self.evaluate()
 
             self.receive_ids()
             self.aggregate_parameters()
@@ -54,10 +50,8 @@ class FML(Server):
                 break
 
         print("\nBest accuracy.")
-        # self.print_(max(self.rs_test_acc), max(
-        #     self.rs_train_acc), min(self.rs_train_loss))
-        print(max(self.rs_test_acc))
-        print("\nAverage time cost per round.")
+        print(f'{max(self.rs_test_acc):.2f}')
+        print("Average time cost per round.")
         print(sum(self.Budget[1:])/len(self.Budget[1:]))
 
         self.save_results()

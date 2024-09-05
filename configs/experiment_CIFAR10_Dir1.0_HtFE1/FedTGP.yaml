@@ -1,0 +1,5 @@
+algorithm: FedProto
+######### FedTGP #########
+lamda: 10.0
+server_epochs: 100
+margin_threthold: 100.0

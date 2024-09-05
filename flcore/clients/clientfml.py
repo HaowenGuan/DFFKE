@@ -52,7 +52,7 @@ class clientFML(Client):
                 optimizer_g.zero_grad()
                 loss.backward(retain_graph=True)
                 loss_g.backward()
-                # prevent divergency on specifical tasks
+                # prevent divergence on specific tasks
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
                 torch.nn.utils.clip_grad_norm_(global_model.parameters(), 10)
                 optimizer.step()
@@ -67,16 +67,16 @@ class clientFML(Client):
 
 
     def test_metrics(self):
-        testloaderfull = self.load_test_data()
+        full_test_loader = self.load_test_data()
         model = load_item(self.role, 'model', self.save_folder_name)
-        # model.to(self.device)
+        model.to(self.device)
         model.eval()
 
         test_acc = 0
         test_num = 0
         
         with torch.no_grad():
-            for x, y in testloaderfull:
+            for x, y in full_test_loader:
                 if type(x) == type([]):
                     x[0] = x[0].to(self.device)
                 else:

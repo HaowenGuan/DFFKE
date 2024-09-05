@@ -34,8 +34,8 @@ class FedKTL(Server):
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.n_clients}")
         print("Finished creating server and clients.")
 
-        # self.load_model()
         self.Budget = []
+        self.auto_break_patient *= 2  # Due to Testing twice each round
 
         self.feature_dim = args.feature_dim
         self.server_learning_rate = args.server_learning_rate
@@ -100,19 +100,18 @@ class FedKTL(Server):
             s_t = time.time()
             self.selected_clients = self.select_clients()
 
-            if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate heterogeneous models")
+            print(f"\n-------------Round number: {i}-------------")
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after FedKTL")
                 self.evaluate()
 
             for client in self.selected_clients:
                 client.train()
                 client.collect_protos()
 
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after local training")
+                self.evaluate()
 
             self.receive_protos()
             self.align()
@@ -125,7 +124,8 @@ class FedKTL(Server):
                 break
 
         print("\nBest accuracy.")
-        print(max(self.rs_test_acc))
+        print(f'{max(self.rs_test_acc):.2f}')
+        print("Average time cost per round.")
         print(sum(self.Budget[1:])/len(self.Budget[1:]))
 
         self.save_results()

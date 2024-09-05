@@ -28,8 +28,9 @@ class Server(object):
         self.current_num_join_clients = self.num_join_clients
         self.algorithm = args.algorithm
         self.experiment_name = args.experiment_name
-        self.auto_break_patient = args.auto_break_patient
         self.auto_break = args.auto_break
+        self.auto_break_patient = args.auto_break_patient
+        self.result_dir = args.result_dir
         self.role = 'Server'
         if args.save_folder_name == 'temp':
             args.save_folder_name_full = f'{args.save_folder_name}/{args.dataset}/{args.algorithm}/{time.time()}/'
@@ -141,14 +142,12 @@ class Server(object):
         save_item(global_model, self.role, 'global_model', self.save_folder_name)
         
     def save_results(self):
-        algo = self.dataset + "_" + self.algorithm
-        result_path = "../results/"
-        if not os.path.exists(result_path):
-            os.makedirs(result_path)
+        if not os.path.exists(self.result_dir):
+            os.makedirs(self.result_dir)
 
         if len(self.rs_test_acc):
-            algo = algo + "_" + self.experiment_name + "_" + str(self.times)
-            file_path = result_path + "{}.h5".format(algo)
+            file_name = self.dataset + "_" + self.algorithm + "_" + self.experiment_name + "_" + str(self.times)
+            file_path = self.result_dir + file_name + ".h5"
             print("File path: " + file_path)
 
             with h5py.File(file_path, 'w') as hf:
@@ -196,31 +195,23 @@ class Server(object):
         stats = self.test_metrics()
         # stats_train = self.train_metrics()
 
-        test_acc = sum(stats[2])*1.0 / sum(stats[1])
+        test_acc = sum(stats[2])*1.0 / sum(stats[1]) * 100
         test_auc = sum(stats[3])*1.0 / sum(stats[1])
-        # train_loss = sum(stats_train[2])*1.0 / sum(stats_train[1])
-        accs = [a / n for a, n in zip(stats[2], stats[1])]
+        accs = [a / n * 100 for a, n in zip(stats[2], stats[1])]
         aucs = [a / n for a, n in zip(stats[3], stats[1])]
         
-        if acc == None:
+        if acc is None:
             self.rs_test_acc.append(test_acc)
         else:
             acc.append(test_acc)
-        
-        # if loss == None:
-        #     self.rs_train_loss.append(train_loss)
-        # else:
-        #     loss.append(train_loss)
 
-        # print("Averaged Train Loss: {:.4f}".format(train_loss))
-        print("Averaged Test Accuracy: {:.4f}".format(test_acc))
+        print("Averaged Test Accuracy: {:.2f}".format(test_acc))
         print("Averaged Test AUC: {:.4f}".format(test_auc))
-        # self.print_(test_acc, train_acc, train_loss)
-        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
+        print("Std Test Accuracy: {:.2f}".format(np.std(accs)))
         print("Std Test AUC: {:.4f}".format(np.std(aucs)))
 
     def print_(self, test_acc, test_auc, train_loss):
-        print("Average Test Accuracy: {:.4f}".format(test_acc))
+        print("Average Test Accuracy: {:.2f}".format(test_acc))
         print("Average Test AUC: {:.4f}".format(test_auc))
         print("Average Train Loss: {:.4f}".format(train_loss))
 
