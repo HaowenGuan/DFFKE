@@ -1,4 +1,4 @@
-algorithm: FedProto
+algorithm: FedTGP
 ######### FedTGP #########
 lamda: 10.0
 server_epochs: 100

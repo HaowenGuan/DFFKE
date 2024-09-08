@@ -91,6 +91,7 @@ class clientTGP(Client):
     def test_metrics(self):
         testloader = self.load_test_data()
         model = load_item(self.role, 'model', self.save_folder_name)
+        model.to(self.device)
         global_protos = load_item('Server', 'global_protos', self.save_folder_name)
         model.eval()
 

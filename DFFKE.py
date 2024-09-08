@@ -147,12 +147,13 @@ def local_to_generator(
             client_emb = []
             client_logit = []
             client_target = []
-            for data, target in L2G_client_data_loader[c_id]:
-                data, target = data.to(device), target.to(device)
-                emb, logit = client(data, use_docking=False)
-                client_emb.append(emb.detach())
-                client_logit.append(F.softmax(logit, dim=1).detach())
-                client_target.append(target)
+            with torch.no_grad():
+                for data, target in L2G_client_data_loader[c_id]:
+                    data, target = data.to(device), target.to(device)
+                    emb, logit = client(data, use_docking=False)
+                    client_emb.append(emb.detach())
+                    client_logit.append(F.softmax(logit, dim=1).detach())
+                    client_target.append(target)
             client_emb = torch.cat(client_emb, dim=0).cpu()
             client_logit = torch.cat(client_logit, dim=0).cpu()
             client_target = torch.cat(client_target, dim=0).cpu()
@@ -236,12 +237,13 @@ def local_to_generator(
         client_emb = []
         client_logit = []
         client_target = []
-        for data, target in L2G_client_data_loader[c_id]:
-            data, target = data.to(device), target.to(device)
-            emb, logit = client(data, use_docking=True)
-            client_emb.append(emb.detach())
-            client_logit.append(F.softmax(logit, dim=1).detach())
-            client_target.append(target)
+        with torch.no_grad():
+            for data, target in L2G_client_data_loader[c_id]:
+                data, target = data.to(device), target.to(device)
+                emb, logit = client(data, use_docking=True)
+                client_emb.append(emb.detach())
+                client_logit.append(F.softmax(logit, dim=1).detach())
+                client_target.append(target)
         client_emb = torch.cat(client_emb, dim=0).cpu()
         client_logit = torch.cat(client_logit, dim=0).cpu()
         client_target = torch.cat(client_target, dim=0).cpu()
@@ -349,16 +351,17 @@ def generator_to_local(
         fake_emb = []
         fake_logit = []
         fake_target = []
-        for emb, logit, target in client_emb_logit_loaders[c_id]:
-            emb, target = emb.to(device), target.to(device)
-            y_one_hot = torch.zeros((len(target), num_classes)).to(device)
-            y_one_hot.scatter_(1, target.unsqueeze(1), 1)
-            c_fake_data = generator(emb, y_one_hot)
-            c_fake_emb, c_fake_logit = client(c_fake_data, use_docking=True)
-            fake_data.append(c_fake_data.detach())
-            fake_emb.append(c_fake_emb.detach())
-            fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
-            fake_target.append(target)
+        with torch.no_grad():
+            for emb, logit, target in client_emb_logit_loaders[c_id]:
+                emb, target = emb.to(device), target.to(device)
+                y_one_hot = torch.zeros((len(target), num_classes)).to(device)
+                y_one_hot.scatter_(1, target.unsqueeze(1), 1)
+                c_fake_data = generator(emb, y_one_hot)
+                c_fake_emb, c_fake_logit = client(c_fake_data, use_docking=True)
+                fake_data.append(c_fake_data.detach())
+                fake_emb.append(c_fake_emb.detach())
+                fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
+                fake_target.append(target)
 
         fake_data = torch.cat(fake_data, dim=0).cpu()
         fake_emb = torch.cat(fake_emb, dim=0).cpu()
@@ -374,17 +377,17 @@ def generator_to_local(
             fake_logit = []
             fake_target = []
             prev_loader = DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True)
-            for data, _, _, target in prev_loader:
-                data, target = data.to(device), target.to(device)
-                c_fake_emb, c_fake_logit = client(data, use_docking=True)
-                fake_data.append(data.detach())
-                fake_emb.append(c_fake_emb.detach())
-                fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
-                fake_target.append(target)
-            data_banks[c_id].fake_data = np.array(torch.cat(fake_data, dim=0).cpu())
-            data_banks[c_id].emb = np.array(torch.cat(fake_emb, dim=0).cpu())
-            data_banks[c_id].logit = np.array(torch.cat(fake_logit, dim=0).cpu())
-            data_banks[c_id].target = np.array(torch.cat(fake_target, dim=0).cpu())
+            with torch.no_grad():
+                for data, _, _, target in prev_loader:
+                    data, target = data.to(device), target.to(device)
+                    c_fake_emb, c_fake_logit = client(data, use_docking=True)
+                    fake_data.append(data.detach())
+                    fake_emb.append(c_fake_emb.detach())
+                    fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
+                    fake_target.append(target)
+            new_data_bank = FakeDataset(torch.cat(fake_data, dim=0).cpu(), torch.cat(fake_emb, dim=0).cpu(),
+                                        torch.cat(fake_logit, dim=0).cpu(), torch.cat(fake_target, dim=0).cpu())
+            data_banks[c_id] = new_data_bank
             data_bank_loaders.append(DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
     #################################### Client Knowledge Exchange using Fake Data ####################################
@@ -589,7 +592,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         local_align_clients(
             clients=clients,
             optimizers=client_optimizers,
-            train_loaders=train_loaders,
+            train_loaders=train_loaders if args['local_align_aug'] else fixed_train_loaders,
             passing_acc=args['local_align_acc'],
             test_loader=full_test_loader,
             log_wandb=args['log_wandb'],
@@ -670,7 +673,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             local_align_clients(
                 clients=clients,
                 optimizers=client_optimizers,
-                train_loaders=train_loaders,
+                train_loaders=train_loaders if args['local_align_aug'] else fixed_train_loaders,
                 passing_acc=args['local_align_acc'],
                 test_loader=None,
                 log_wandb=args['log_wandb'],
@@ -680,6 +683,8 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
             evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
 
+        if device == 'cuda':
+            torch.cuda.empty_cache()
         print("-------------------------------------------------------------------------------------------------")
 
     save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/')

@@ -132,33 +132,46 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
 
 
 def local_align_clients(clients, optimizers, train_loaders, passing_acc, test_loader, log_wandb=False, device='cpu'):
-    training_clients = {c_id: client for c_id, client in enumerate(clients)}
+    print('>> Local Aligning clients...')
+    # Select clients that need training
+    training_clients = {}
+    for c_id, client in enumerate(clients):
+        client.eval()
+        with torch.no_grad():
+            client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], None, device)
+        if client_acc < passing_acc:
+            training_clients[c_id] = client
+        else:
+            print(f'>> Client {c_id} passed with local acc {client_acc * 100:.2f}%')
+
     client_training_loss_acc = {}
     client_testing_loss_acc = {}
     epoch = 0
     while len(training_clients) > 0:
         epoch += 1
-        train_results = ''
-        test_results = ''
         for c_id, client in list(training_clients.items()):
             client.train()
             client_loss, client_acc = general_one_epoch(client, train_loaders[c_id], optimizers[c_id], device)
             client_training_loss_acc[c_id] = (client_loss, client_acc * 100)
             if client_acc > passing_acc:
+                print(f'>> Client {c_id} passed with local acc {client_acc * 100:.2f}%')
                 del training_clients[c_id]
             client.eval()
             if test_loader is not None:
-                client_loss, client_acc = general_one_epoch(client, test_loader, None, device)
+                with torch.no_grad():
+                    client_loss, client_acc = general_one_epoch(client, test_loader, None, device)
                 client_testing_loss_acc[c_id] = (client_loss, client_acc * 100)
 
-        for k, loss_acc in client_training_loss_acc.items():
-            train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.1f}) '
-        print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
-
-        if test_loader is not None:
-            for k, loss_acc in client_testing_loss_acc.items():
-                test_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.1f}) '
-            print(f">> Epoch {epoch}, Client Testing (Loss,Acc):  {test_results[:-1]}")
+        if not test_loader:
+            train_results = ''
+            for k, loss_acc in client_training_loss_acc.items():
+                train_results += f'{k}:({loss_acc[0]:.2f},{loss_acc[1]:.2f}) '
+            print(f">> Epoch {epoch}, Client Training (Loss,Acc): {train_results[:-1]}")
+        else:
+            train_test_results = ''
+            for k, loss_acc in client_training_loss_acc.items():
+                train_test_results += f'{k}:({loss_acc[1]:.2f},{client_testing_loss_acc[k][1]:.2f}) '
+            print(f">> Epoch {epoch}, Client Local (Train Acc,Test Acc):  {train_test_results[:-1]}")
             if log_wandb:
                 wandb.log({'Local Aligned Test Set Loss': np.mean([x[0] for x in client_testing_loss_acc.values()]),
                            'Local Aligned Test Set Acc': np.mean([x[1] for x in client_testing_loss_acc.values()])})
@@ -182,12 +195,13 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
     client_acc_dict = {}
     for c_id, client in tqdm(list(enumerate(clients))):
         client.eval()
-        if mode == 'emb_test':
-            client_loss, client_acc = embedding_test(client, loader, False, device)
-        elif mode == 'cls_test':
-            client_loss, client_acc = general_one_epoch(client, loader, None, device)
-        else:
-            raise ValueError('Unknown mode')
+        with torch.no_grad():
+            if mode == 'emb_test':
+                client_loss, client_acc = embedding_test(client, loader, False, device)
+            elif mode == 'cls_test':
+                client_loss, client_acc = general_one_epoch(client, loader, None, device)
+            else:
+                raise ValueError('Unknown mode')
         results += f'{c_id}:({client_loss:.2f},{client_acc * 100:.1f}) '
         client_loss_list.append(client_loss)
         client_acc_list.append(client_acc * 100)
@@ -204,9 +218,11 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
 
 
 def pure_student_evaluation(pure_student, train_loader, test_loader, log_wandb=False, device='cpu'):
-    ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
+    pure_student.eval()
+    with torch.no_grad():
+        ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
+        ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
     print(f'Pure Student train set cls Loss {ps_train_cls_loss:.3f}, Acc {ps_train_cls_acc * 100:.2f}')
-    ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)
     print(f'Pure Student test set cls Loss {ps_test_cls_loss:.3f}, Acc {ps_test_cls_acc * 100:.2f}')
     if log_wandb:
         wandb.log({
