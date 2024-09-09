@@ -617,7 +617,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     ################################################ Knowledge Exchange ################################################
     local_aligned_best_test_loss = [0] * args['n_clients']
     local_aligned_best_test_acc = [0] * args['n_clients']
-    data_banks = [CustomDataset([], []) for _ in range(args['n_clients'])]
+    data_banks = [CustomDataset(np.empty((0, 3, 32, 32)), np.empty((0,))) for _ in range(args['n_clients'])]
     knowledge_exchanged_clients = clients.copy()
 
     for round_i in range(args['knowledge_exchange_rounds']):
