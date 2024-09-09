@@ -72,7 +72,7 @@ mu: 50.0
 
 ######### DFFKE Setting #########
 client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
-warmup_clients: True
+warmup_clients: False
 local_align_acc: 0.95
 knowledge_exchange_rounds: 40
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator

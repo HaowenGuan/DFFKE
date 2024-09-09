@@ -35,8 +35,12 @@ class CustomDataset(data.Dataset):
         return len(self.data)
 
     def update(self, other_data: np.array, other_target: np.array):
-        self.data = np.concatenate((self.data, other_data))
-        self.target = np.concatenate((self.target, other_target))
+        if len(self.data) == 0:
+            self.data = other_data
+            self.target = other_target
+        else:
+            self.data = np.concatenate((self.data, other_data))
+            self.target = np.concatenate((self.target, other_target))
 
 
 class EmbLogitSet(data.Dataset):
