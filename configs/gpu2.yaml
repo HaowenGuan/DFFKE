@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-device_id: 1
+device_id: 2
 log_wandb: True
 wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated based on configuration

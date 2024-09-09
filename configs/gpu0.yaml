@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-device_id: 1
+device_id: 0
 log_wandb: True
 wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated based on configuration
@@ -77,8 +77,8 @@ local_align_acc: 0.95
 knowledge_exchange_rounds: 40
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
-new_client_opt_every_round_x: True
-new_client_opt_every_round_y: False
+new_client_opt_every_round_x: False
+new_client_opt_every_round_y: True
 dock_kd: True # Dock or Emb
 cls_clustering: True
 local_align_aug: True

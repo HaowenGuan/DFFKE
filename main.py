@@ -51,9 +51,14 @@ def generate_wandb_name(args):
         name += args['generator_model'] + ' / '
         name += 'DFFKE'
         if args['local_align_after_knowledge_exchange']:
-            name += ' + Review'
-        if args['new_client_opt_every_round']:
+            name += f' + Review{args["local_align_acc"]}'
+
+        if args['new_client_opt_every_round_x'] or args['new_client_opt_every_round_y']:
             name += ' + NewOpt'
+            if args['new_client_opt_every_round_x']:
+                name += 'X'
+            if args['new_client_opt_every_round_y']:
+                name += 'Y'
         name += ' / '
         name += f'L2G {args["L2G_epoch"]}.emb.kl.lmd / '
         name += f'G2L {args["G2L_epoch"]}'

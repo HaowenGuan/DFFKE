@@ -34,6 +34,10 @@ class CustomDataset(data.Dataset):
     def __len__(self):
         return len(self.data)
 
+    def update(self, other_data: np.array, other_target: np.array):
+        self.data = np.concatenate((self.data, other_data))
+        self.target = np.concatenate((self.target, other_target))
+
 
 class EmbLogitSet(data.Dataset):
     def __init__(self, emb, logit, target):

@@ -1,1 +1,3 @@
-nohup python3 /home/seazer/code/DFFKE/main.py --config_file DFFKE.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir1.0_HtFE1_DFFKE_98.log &
+nohup python3 /home/seazer/code/DFFKE/main.py --config_file gpu0.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir1.0_HtFE1_DFFKE_95_invopt.log &
+nohup python3 /home/seazer/code/DFFKE/main.py --config_file gpu1.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir1.0_HtFE1_DFFKE_95_2opt.log &
+nohup python3 /home/seazer/code/DFFKE/main.py --config_file gpu2.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir1.0_HtFE1_DFFKE_95_regular.log &

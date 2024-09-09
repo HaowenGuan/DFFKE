@@ -1,5 +1,7 @@
 import os
 import copy
+from itertools import islice
+
 import wandb
 import torch
 import torch.nn as nn
@@ -12,7 +14,7 @@ from tqdm import tqdm
 
 from DFFKE_losses import contrastive, inverse_cross_entropy
 from models.model_factory_fn import get_generator, init_client_nets
-from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader
+from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader, CustomDataset
 from DFFKE_utils import mkdir, save_checkpoint, local_align_clients, evaluate, pure_student_evaluation
 
 
@@ -247,7 +249,10 @@ def local_to_generator(
         client_emb = torch.cat(client_emb, dim=0).cpu()
         client_logit = torch.cat(client_logit, dim=0).cpu()
         client_target = torch.cat(client_target, dim=0).cpu()
-        emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
+        # Determine the number of samples to keep (for example 10%)
+        num_samples = int(args['L2G_sample_ratio'] * client_emb.size(0))
+        indices = torch.randperm(client_emb.size(0))[:num_samples]
+        emb_logit_set = EmbLogitSet(client_emb[indices], client_logit[indices], client_target[indices])
         client_emb_logit_loaders.append(DataLoader(emb_logit_set, batch_size=batch_size, shuffle=True, drop_last=True))
 
     ################################################ Training Generator ###############################################
@@ -345,7 +350,6 @@ def generator_to_local(
     # Generate Fake Data From Generator
     fake_datasets = []
     fake_data_loaders = []
-    data_bank_loaders = []
     for c_id, client in enumerate(clients):
         fake_data = []
         fake_emb = []
@@ -370,25 +374,30 @@ def generator_to_local(
         fake_datasets.append(FakeDataset(fake_data, fake_emb, fake_logit, fake_target))
         fake_data_loaders.append(DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
+    # Calculate G2L Iteration
+    max_data_len = max([len(loader) for loader in fake_data_loaders])
+    G2L_iteration = G2L_epoch * max_data_len
+
+    data_bank_loaders = []
+    for c_id, client in enumerate(clients):
         # Preprocess data bank knowledge from each teacher (client)
         if len(data_banks[c_id]) > 0:
             fake_data = []
             fake_emb = []
             fake_logit = []
             fake_target = []
-            prev_loader = DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True)
+            db_loader = DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True)
             with torch.no_grad():
-                for data, _, _, target in prev_loader:
+                for data, target in islice(db_loader, G2L_iteration * args['G2L_data_bank_iteration']):
                     data, target = data.to(device), target.to(device)
                     c_fake_emb, c_fake_logit = client(data, use_docking=True)
                     fake_data.append(data.detach())
                     fake_emb.append(c_fake_emb.detach())
                     fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
                     fake_target.append(target)
-            new_data_bank = FakeDataset(torch.cat(fake_data, dim=0).cpu(), torch.cat(fake_emb, dim=0).cpu(),
-                                        torch.cat(fake_logit, dim=0).cpu(), torch.cat(fake_target, dim=0).cpu())
-            data_banks[c_id] = new_data_bank
-            data_bank_loaders.append(DataLoader(data_banks[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
+            db_review_dataset = FakeDataset(torch.cat(fake_data, dim=0).cpu(), torch.cat(fake_emb, dim=0).cpu(),
+                                            torch.cat(fake_logit, dim=0).cpu(), torch.cat(fake_target, dim=0).cpu())
+            data_bank_loaders.append(DataLoader(db_review_dataset, batch_size=batch_size, shuffle=True, drop_last=True))
 
     #################################### Client Knowledge Exchange using Fake Data ####################################
     pure_student.train()
@@ -397,7 +406,7 @@ def generator_to_local(
 
     client_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(client_data_loaders)]
     fake_data_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(fake_data_loaders)]
-    data_bank_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(data_bank_loaders) if loader is not None]
+    data_bank_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(data_bank_loaders)]
 
     # Convert Dict to List to save hashing time
     students = [[c_id, client, client_optimizers[c_id], client_inf_loaders[c_id]] for c_id, client in enumerate(clients)]
@@ -405,9 +414,6 @@ def generator_to_local(
     import torch.optim as optimizer
     pure_student_optimizer = optimizer.Adam(pure_student.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
     wandb_step = wandb.run.step if args['log_wandb'] else 0
-
-    max_data_len = max([len(loader) for loader in fake_data_loaders])
-    G2L_iteration = G2L_epoch * max_data_len
 
     for i in tqdm(range(G2L_iteration)):
         # Phase A
@@ -470,6 +476,7 @@ def generator_to_local(
                 if args['G2L_cal_emb_loss']:
                     emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
                     db_ps_emb_loss_list.append(emb_loss.item())
+                    loss += emb_loss
                 logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
                 db_ps_logit_loss_list.append(logit_loss.item())
                 loss += logit_loss
@@ -504,6 +511,7 @@ def generator_to_local(
             if args['G2L_cal_emb_loss']:
                 emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
                 ps_emb_loss_list.append(emb_loss.item())
+                loss += emb_loss
             logit_loss = F.kl_div(F.log_softmax(ps_fake_logit, dim=1), t_fake_logit, reduction='batchmean')
             ps_logit_loss_list.append(logit_loss.item())
             loss += logit_loss
@@ -582,7 +590,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
                 del state_dict[c_id]['model_state_dict']['docking.weight']
                 del state_dict[c_id]['model_state_dict']['docking.bias']
                 client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
-                # client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
+                client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
             print(f'>> Loaded.')
 
     # Client local training until converge
@@ -609,13 +617,13 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     ################################################ Knowledge Exchange ################################################
     local_aligned_best_test_loss = [0] * args['n_clients']
     local_aligned_best_test_acc = [0] * args['n_clients']
-    data_banks = [FakeDataset([], [], [], []) for _ in range(args['n_clients'])]
+    data_banks = [CustomDataset([], []) for _ in range(args['n_clients'])]
     knowledge_exchanged_clients = clients.copy()
 
     for round_i in range(args['knowledge_exchange_rounds']):
         print(f'>> Current Round: {round_i}')
 
-        if args['new_client_opt_every_round']:
+        if args['new_client_opt_every_round_x']:
             # Get a new client optimizer every round
             for client_id, client in enumerate(clients):
                 client_optimizers[client_id] = \
@@ -656,12 +664,10 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             batch_size=args['batch_size'],
             device=device,
         )
-        # Finally, add the current fake data into the data bank
+        # Finally, add the recently generated fake data into the data bank
         for c_id, data_bank in enumerate(data_banks):
-            if data_bank:
-                data_bank.update(fake_datasets[c_id])
-            else:
-                data_banks[c_id] = fake_datasets[c_id]
+            data_bank.update(fake_datasets[c_id].fake_data, fake_datasets[c_id].target)
+        del fake_datasets
         # Save a copy of knowledge exchanged clients for next round adversarial loss calculation
         knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
         # Evaluate after knowledge exchange
@@ -670,6 +676,10 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
 
         if args['local_align_after_knowledge_exchange']:
+            if args['new_client_opt_every_round_y']:
+                for client_id, client in enumerate(clients):
+                    client_optimizers[client_id] = \
+                        optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
             local_align_clients(
                 clients=clients,
                 optimizers=client_optimizers,
