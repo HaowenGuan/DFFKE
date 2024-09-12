@@ -73,15 +73,13 @@ mu: 50.0
 ######### DFFKE Setting #########
 client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
 warmup_clients: False
-local_align_acc: 0.95
+local_align_acc: 0.98
 knowledge_exchange_rounds: 40
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
-new_client_opt_every_round_x: True
-new_client_opt_every_round_y: False
+new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
 cls_clustering: True
-local_align_aug: True
 L2G_epoch: 6
 L2G_sample_ratio: 1.0
 L2G_augment_logits: False

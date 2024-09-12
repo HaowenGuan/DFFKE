@@ -282,7 +282,7 @@ def start(args):
     reporter.report()
 
 
-def run_baseline(config_args=None):
+def run_baseline(config_args=None, data_distributor=None):
     parser = argparse.ArgumentParser()
     # general
     parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg")
@@ -393,7 +393,7 @@ def run_baseline(config_args=None):
     print("=" * 50)
 
     if args.use_data_distributor:
-        args.data_distributor = DataDistributor(vars(args))
+        args.data_distributor = data_distributor
     else:
         args.data_distributor = None
 

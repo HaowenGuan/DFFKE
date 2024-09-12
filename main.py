@@ -52,13 +52,8 @@ def generate_wandb_name(args):
         name += 'DFFKE'
         if args['local_align_after_knowledge_exchange']:
             name += f' + Review{args["local_align_acc"]}'
-
-        if args['new_client_opt_every_round_x'] or args['new_client_opt_every_round_y']:
+        if args['new_client_opt_every_round']:
             name += ' + NewOpt'
-            if args['new_client_opt_every_round_x']:
-                name += 'X'
-            if args['new_client_opt_every_round_y']:
-                name += 'Y'
         name += ' / '
         name += f'L2G {args["L2G_epoch"]}.emb.kl.lmd / '
         name += f'G2L {args["G2L_epoch"]}'
@@ -101,15 +96,15 @@ def run_experiment(args):
 
     print(args)
 
+    data_distributor = DataDistributor(args) if args['use_data_distributor'] else None
+
     if args['algorithm'] == 'DFFKE':
-        data_distributor = DataDistributor(args)
         data_free_federated_knowledge_exchange(args, data_distributor)
     elif args['algorithm'] == 'DFRD':
         from baselines.DFRD.main_DFRD import DFRD
-        data_distributor = DataDistributor(args)
         DFRD(args, data_distributor)
     else:
-        run_baseline(args)
+        run_baseline(args, data_distributor)
 
 
 if __name__ == '__main__':

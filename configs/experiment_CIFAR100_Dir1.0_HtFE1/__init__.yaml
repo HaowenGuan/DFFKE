@@ -71,17 +71,17 @@ mu: 50.0
 
 
 ######### DFFKE Setting #########
-client_encoder: ResNet18 # ResNet18, ResNet18_32x32
-warmup_clients: False
-local_align_acc: 0.95
-save_clients: False
-knowledge_exchange_rounds: 20
+client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
+warmup_clients: True
+local_align_acc: 0.98
+knowledge_exchange_rounds: 40
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
 cls_clustering: True
 L2G_epoch: 6
+L2G_sample_ratio: 1.0
 L2G_augment_logits: False
 L2G_use_emb_md_loss: False  #\ Only One
 L2G_use_logit_md_loss: True #/ Only One
@@ -91,10 +91,11 @@ G2L_data_bank_iteration: 1
 G2L_augment_real: False
 G2L_cal_emb_loss: True
 
+save_clients: False
 checkpoint_dir: ./checkpoints/
 ######### Load Clients checkpoints #########
-#load_clients: null
-load_clients: ./checkpoints/warmup/
+load_clients: null
+#load_clients: ./checkpoints/warmup/
 #load_clients: ./checkpoints/knowledge_exchange/
 
 ######### FL Scenario #########

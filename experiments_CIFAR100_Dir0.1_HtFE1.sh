@@ -6,4 +6,5 @@ nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFA
 nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file FedKD.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir0.1_HtFE1_FedKD.log && \
 nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file FedDistill.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir0.1_HtFE1_FedDistill.log && \
 nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file FedProto.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir0.1_HtFE1_FedProto.log && \
-nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file FedKTL.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir0.1_HtFE1_FedKTL.log &
+nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file FedKTL.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir0.1_HtFE1_FedKTL.log && \
+nohup python3 /home/seazer/code/DFFKE/main.py --group_experiment experiment_CIFAR100_Dir0.1_HtFE1 --config_file DFFKE.yaml 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' > logs/experiment_CIFAR100_Dir1.0_HtFE1_DFFKE.log &

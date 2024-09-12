@@ -115,7 +115,7 @@ def embedding_test(net, data_loader, use_docking=False, device='cpu'):
     return loss, acc
 
 
-def save_checkpoint(args, clients, optimizers, checkpoint_folder):
+def save_checkpoint(args, clients, optimizers, checkpoint_folder, pure_student=None):
     if args['save_clients']:
         folder = args['checkpoint_dir'] + checkpoint_folder
         mkdir(folder)
@@ -125,6 +125,10 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder):
             checkpoint[c_id] = {
                 'model_state_dict': client.state_dict(),
                 'optimizer_state_dict': optimizers[c_id].state_dict(),
+            }
+        if pure_student is not None:
+            checkpoint['pure_student'] = {
+                'model_state_dict': pure_student.state_dict(),
             }
         # Save the checkpoint
         torch.save(checkpoint, folder + f'{file_name}.pt')
@@ -194,7 +198,6 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
     client_acc_list = []
     client_acc_dict = {}
     for c_id, client in tqdm(list(enumerate(clients))):
-        client.eval()
         with torch.no_grad():
             if mode == 'emb_test':
                 client_loss, client_acc = embedding_test(client, loader, False, device)
@@ -218,7 +221,6 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
 
 
 def pure_student_evaluation(pure_student, train_loader, test_loader, log_wandb=False, device='cpu'):
-    pure_student.eval()
     with torch.no_grad():
         ps_train_cls_loss, ps_train_cls_acc = general_one_epoch(pure_student, train_loader, None, device)
         ps_test_cls_loss, ps_test_cls_acc = general_one_epoch(pure_student, test_loader, None, device)

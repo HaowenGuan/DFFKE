@@ -591,6 +591,8 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
                 del state_dict[c_id]['model_state_dict']['docking.bias']
                 client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
                 client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
+            if 'pure_student' in state_dict:
+                pure_student.load_state_dict(state_dict['pure_student']['model_state_dict'], strict=False)
             print(f'>> Loaded.')
 
     # Client local training until converge
@@ -623,7 +625,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     for round_i in range(args['knowledge_exchange_rounds']):
         print(f'>> Current Round: {round_i}')
 
-        if args['new_client_opt_every_round_x']:
+        if args['new_client_opt_every_round']:
             # Get a new client optimizer every round
             for client_id, client in enumerate(clients):
                 client_optimizers[client_id] = \
@@ -671,15 +673,13 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         # Save a copy of knowledge exchanged clients for next round adversarial loss calculation
         knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
         # Evaluate after knowledge exchange
+        pure_student.train()
         pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
+        for client in clients: client.train()
         evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
         evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
 
         if args['local_align_after_knowledge_exchange']:
-            if args['new_client_opt_every_round_y']:
-                for client_id, client in enumerate(clients):
-                    client_optimizers[client_id] = \
-                        optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
             local_align_clients(
                 clients=clients,
                 optimizers=client_optimizers,
@@ -690,6 +690,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
                 device=device)
 
             # Evaluate after local alignment
+            for client in clients: client.eval()
             evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
             evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
 
