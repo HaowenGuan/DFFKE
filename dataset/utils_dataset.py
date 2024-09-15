@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, CIFAR100
 
-from dataset.transforms import get_cifar_transform, get_mini_image_transform
+from dataset.transforms import get_cifar10_transform, get_cifar100_transform
 
 
 class CustomDataset(data.Dataset):
@@ -131,16 +131,14 @@ class DataDistributor:
                 if cnt:
                     self.client_label_list[i].append(cls)
 
-        if args['dataset'] in ['CIFAR10', 'CIFAR100', 'FC100']:
-            transform = get_cifar_transform()
-            train_transform = transform['train_transform']
-            test_transform = transform['test_transform']
-        elif args['dataset'] == 'miniImageNet':
-            transform = get_mini_image_transform()
-            train_transform = transform['train_transform']
-            test_transform = transform['test_transform']
+        if args['dataset'] == 'CIFAR10':
+            transform = get_cifar10_transform()
+        elif args['dataset'] in ['CIFAR100', 'FC100']:
+            transform = get_cifar100_transform()
         else:
             raise ValueError('Unknown encoder')
+        train_transform = transform['train_transform']
+        test_transform = transform['test_transform']
 
         self.client_train_loaders = []
         self.client_fixed_train_loaders = []
@@ -174,7 +172,7 @@ class DataDistributor:
         torch.multiprocessing.set_sharing_strategy('file_system')
         self.X_train_clients = []
         self.Y_train_clients = []
-        for loader in self.client_fixed_train_loaders:
+        for loader in self.client_train_loaders:
             X = []
             Y = []
             for x, y in loader:

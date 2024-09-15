@@ -78,12 +78,12 @@ knowledge_exchange_rounds: 40
 generator_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
-L2G_epoch: 6
+L2G_epoch: 3
 L2G_sample_ratio: 1.0
 L2G_augment_logits: False
 L2G_use_emb_md_loss: False  #\ Only One
 L2G_use_logit_md_loss: True #/ Only One
-G2L_epoch: 4
+G2L_epoch: 2
 G2L_local_review_iteration: 1
 G2L_data_bank_iteration: 1
 G2L_augment_real: False

@@ -126,7 +126,6 @@ def local_to_generator(
         generator_optimizer,
         batch_size,
         L2G_epoch,
-        pure_student,
         knowledge_exchanged_clients,
         device='cuda',):
 
@@ -549,22 +548,23 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     # Load the checkpoint if needed
     if args['load_clients'] is not None:
         file_name = get_checkpoint_file_name(args)
-        checkpoint_path = args['load_clients'] + file_name + '.pt'
+        checkpoint_path = os.path.join(args['load_clients'], file_name)
         # Check if the checkpoint exists
         if not os.path.exists(checkpoint_path):
             print(f'>> Checkpoint file {checkpoint_path} does not exist. Skip loading clients.')
             args['load_clients'] = None
         else:
-            print(f'>> Loading clients checkpoint from {checkpoint_path}')
+            print(f'>> Loading checkpoint from {checkpoint_path}')
             state_dict = torch.load(checkpoint_path)
             for c_id, client in enumerate(clients):
                 del state_dict[c_id]['model_state_dict']['docking.weight']
                 del state_dict[c_id]['model_state_dict']['docking.bias']
                 client.load_state_dict(state_dict[c_id]['model_state_dict'], strict=False)
                 client_optimizers[c_id].load_state_dict(state_dict[c_id]['optimizer_state_dict'])
+            print(f'>> Clients checkpoint Loaded.')
             if 'pure_student' in state_dict:
                 pure_student.load_state_dict(state_dict['pure_student']['model_state_dict'], strict=False)
-            print(f'>> Loaded.')
+                print(f'>> Pure Student checkpoint Loaded.')
 
     # Client local training until converge
     if args['load_clients'] is None and args['warmup_clients']:
@@ -577,15 +577,15 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             passing_acc=args['local_align_acc'],
             test_loader=full_test_loader,
             log_wandb=args['log_wandb'],
-            device=device)
-
-        save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/')
+            device=device
+        )
+        save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/', pure_student=pure_student)
         print(">> Warmup Clients Finished.")
     else:
         print(">> Skip Warmup Clients. If this is not intended, please modify configuration properly.")
 
-    evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
-    evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+    evaluate(clients, full_train_loader, 'Train', 'Local Aligned', args['log_wandb'], device)
+    evaluate(clients, full_test_loader, 'Test', 'Local Aligned', args['log_wandb'], device)
     pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
     print("-------------------------------------------------------------------------------------------------")
 
@@ -622,7 +622,6 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             batch_size=args['batch_size'],
             L2G_epoch=args['L2G_epoch'],
             device=device,
-            pure_student=pure_student,
             knowledge_exchanged_clients=knowledge_exchanged_clients,
         )
         # G2L
@@ -647,15 +646,14 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         # Save a copy of knowledge exchanged clients for next round adversarial loss calculation
         knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
         # Evaluate after knowledge exchange
-        pure_student.eval()
         pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
-        for client in clients: client.eval()
-        evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
-        t_acc = evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
+        evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', args['log_wandb'], device)
+        t_acc = evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', args['log_wandb'], device)
+        # Save the best model
         if np.mean(t_acc) > best_test_acc_mean:
             best_test_acc_mean = np.mean(t_acc)
             best_test_acc_std = np.std(t_acc)
-            save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/')
+            save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/', pure_student=pure_student)
         elif best_test_acc_mean - np.mean(t_acc) > 8:
             print("Early Stopping...")
             break
@@ -668,12 +666,12 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
                 passing_acc=args['local_align_acc'],
                 test_loader=None,
                 log_wandb=args['log_wandb'],
-                device=device)
-
+                device=device
+            )
             # Evaluate after local alignment
             for client in clients: client.eval()
-            evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
-            evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
+            evaluate(clients, full_train_loader, 'Train', 'Local Aligned', args['log_wandb'], device)
+            evaluate(clients, full_test_loader, 'Test', 'Local Aligned', args['log_wandb'], device)
 
         if device == 'cuda':
             torch.cuda.empty_cache()
