@@ -1,6 +1,6 @@
 ######### System #########
 device: cuda
-device_id: 1
+device_id: 0
 log_wandb: True
 wandb_project: DFFKE
 wandb_name: null # If null, name will be automatically generated based on configuration
@@ -10,7 +10,7 @@ n_clients: 10
 algorithm: DFFKE # Local / DFFKE / LG-FedAvg / FedGen / FedGH / FML / FedKD / FedDistill / FedProto / FedKTL-stylegan-xl
 
 ######### Baseline General #########
-experiment_name: test
+experiment_name: template
 model_family: HtFE1
 global_rounds: 100
 local_epochs: 1
@@ -72,14 +72,12 @@ mu: 50.0
 
 ######### DFFKE Setting #########
 client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
-warmup_clients: True
+warmup_clients: False
 local_align_acc: 0.98
-knowledge_exchange_rounds: 40
-generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
+knowledge_exchange_rounds: 30
+generator_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
-dock_kd: True # Dock or Emb
-cls_clustering: True
 L2G_epoch: 6
 L2G_sample_ratio: 1.0
 L2G_augment_logits: False

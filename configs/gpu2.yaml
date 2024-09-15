@@ -79,7 +79,6 @@ generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGen
 local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
 dock_kd: True # Dock or Emb
-cls_clustering: True
 L2G_epoch: 6
 L2G_sample_ratio: 1.0
 L2G_augment_logits: False

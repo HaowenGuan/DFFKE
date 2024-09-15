@@ -114,6 +114,15 @@ class DataDistributor:
             redo_split=args['redo_ds_split']
         )
         X_train, Y_train, _, _, n_class = load_dataset(args['dataset'], args['data_dir'])
+        # print(X_train.shape, np.min(X_test), np.max(X_test))
+        #
+        # data_reshaped = X_train.reshape(-1, 3)
+        # mean = np.mean(data_reshaped, axis=0) / 255
+        # std = np.std(data_reshaped, axis=0) / 255
+        #
+        # print("Mean:", mean)
+        # print("Standard Deviation:", std)
+
         self.client_class_cnt = client_class_cnt
         self.n_class = n_class
         self.client_label_list = [[] for _ in range(args['n_clients'])]
@@ -183,6 +192,7 @@ class DataDistributor:
             self.Y_test.append(y.detach().cpu())
         self.X_test = torch.cat(self.X_test, dim=0)
         self.Y_test = torch.cat(self.Y_test, dim=0)
+        # print(torch.min(self.X_test), torch.max(self.X_test))
 
     def get_client_train_data(self, client_id):
         return self.X_train_clients[client_id], self.Y_train_clients[client_id]

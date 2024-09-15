@@ -29,7 +29,7 @@ num_classes: 100
 use_data_distributor: True # If False, dataset must be prepared using generate files in dataset directory
 data_dir: ./data/
 data_partition: non_iid_balanced # iid, non_iid_unbalanced, non_iid_balanced
-alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
+alpha: 0.1 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero); if null, perfect iid
 redo_ds_split: False
 
 # Training Hyper-parameters
@@ -74,12 +74,10 @@ mu: 50.0
 client_encoder: ResNet18_32x32 # ResNet18, ResNet18_32x32
 warmup_clients: False
 local_align_acc: 0.98
-knowledge_exchange_rounds: 40
+knowledge_exchange_rounds: 30
 generator_model: LatentGenerator #CGeneratorA / LatentGenerator / ClassLatentGenerator
 local_align_after_knowledge_exchange: True
 new_client_opt_every_round: True
-dock_kd: True # Dock or Emb
-cls_clustering: True
 L2G_epoch: 6
 L2G_sample_ratio: 1.0
 L2G_augment_logits: False
@@ -90,6 +88,7 @@ G2L_local_review_iteration: 1
 G2L_data_bank_iteration: 1
 G2L_augment_real: False
 G2L_cal_emb_loss: True
+normalize_fake_data: False
 
 save_clients: False
 checkpoint_dir: ./checkpoints/

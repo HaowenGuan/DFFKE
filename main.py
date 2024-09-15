@@ -65,10 +65,8 @@ def generate_wandb_name(args):
         if args['G2L_cal_emb_loss']:
             name += 'emb.'
         name += 'kl / '
-        if args['dock_kd']:
-            name += 'Dock KD / '
-        else:
-            name += 'EMB KD / '
+        # if args['normalize_fake_data']:
+        #     name += 'NormFK / '
     name += f'{args["n_clients"]} Clients / '
     name += f'{args["dataset"]} Dir({args["alpha"]})'
     return name

@@ -15,12 +15,10 @@ def get_model(model_name, **kwargs):
 
 
 def get_generator(model_name, **kwargs):
-    if model_name == 'CGeneratorA':
-        return generators.CGeneratorA(**kwargs)
-    elif model_name == 'LatentGenerator':
+    if model_name == 'LatentGenerator':
         return generators.LatentGenerator(**kwargs)
     elif model_name == 'ClassLatentGenerator':
-        return generators.CLassLatentGenerator(**kwargs)
+        return generators.ClassLatentGenerator(**kwargs)
     else:
         print(model_name)
         raise ValueError('Wrong model name.')

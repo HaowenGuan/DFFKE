@@ -115,11 +115,21 @@ def embedding_test(net, data_loader, use_docking=False, device='cpu'):
     return loss, acc
 
 
+def get_checkpoint_file_name(args):
+    dataset = args['dataset']
+    model_family = args['model_family']
+    n_clients = args['n_clients']
+    alpha = float(args['alpha'])
+    local_align_acc = int(args['local_align_acc'] * 100)
+    client_encoder = args['client_encoder']
+    return f'{dataset}_{model_family}_{n_clients}client_{alpha}alpha_{local_align_acc}acc_{client_encoder}_checkpoint'
+
+
 def save_checkpoint(args, clients, optimizers, checkpoint_folder, pure_student=None):
     if args['save_clients']:
         folder = args['checkpoint_dir'] + checkpoint_folder
         mkdir(folder)
-        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        file_name = get_checkpoint_file_name(args)
         checkpoint = {}
         for c_id, client in enumerate(clients):
             checkpoint[c_id] = {
@@ -136,6 +146,7 @@ def save_checkpoint(args, clients, optimizers, checkpoint_folder, pure_student=N
 
 
 def local_align_clients(clients, optimizers, train_loaders, passing_acc, test_loader, log_wandb=False, device='cpu'):
+    print('=' * 32)
     print('>> Local Aligning clients...')
     # Select clients that need training
     training_clients = {}
@@ -175,10 +186,11 @@ def local_align_clients(clients, optimizers, train_loaders, passing_acc, test_lo
             train_test_results = ''
             for k, loss_acc in client_training_loss_acc.items():
                 train_test_results += f'{k}:({loss_acc[1]:.2f},{client_testing_loss_acc[k][1]:.2f}) '
-            print(f">> Epoch {epoch}, Client Local (Train Acc,Test Acc):  {train_test_results[:-1]}")
+            print(f">> Epoch {epoch}, Client Local (Train,Test) Acc: {train_test_results[:-1]}")
             if log_wandb:
                 wandb.log({'Local Aligned Test Set Loss': np.mean([x[0] for x in client_testing_loss_acc.values()]),
                            'Local Aligned Test Set Acc': np.mean([x[1] for x in client_testing_loss_acc.values()])})
+    print('=' * 32)
 
 
 def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, device='cpu'):
@@ -196,7 +208,6 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
     results = ''
     client_loss_list = []
     client_acc_list = []
-    client_acc_dict = {}
     for c_id, client in tqdm(list(enumerate(clients))):
         with torch.no_grad():
             if mode == 'emb_test':
@@ -208,7 +219,6 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
         results += f'{c_id}:({client_loss:.2f},{client_acc * 100:.1f}) '
         client_loss_list.append(client_loss)
         client_acc_list.append(client_acc * 100)
-        client_acc_dict[c_id] = client_acc
     print(f">> {dataset} Set (Loss,Acc): {results}")
     print(f'>> Avg (Loss, Acc, Std):({np.mean(client_loss_list):.2f}, {np.mean(client_acc_list):.2f}, {np.std(client_acc_list):.2f})')
 
@@ -217,7 +227,7 @@ def evaluate(clients, loader, dataset, name, mode='cls_test', log_wandb=False, d
             f'{name} {dataset} Set Loss': np.mean(client_loss_list),
             f'{name} {dataset} Set Acc': np.mean(client_acc_list)
         })
-    return client_acc_dict
+    return client_acc_list
 
 
 def pure_student_evaluation(pure_student, train_loader, test_loader, log_wandb=False, device='cpu'):

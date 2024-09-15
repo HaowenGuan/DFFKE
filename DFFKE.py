@@ -1,21 +1,19 @@
 import os
 import copy
-from itertools import islice
-
 import wandb
+import numpy as np
+from tqdm import tqdm
+from itertools import islice
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from collections import defaultdict
-from tqdm import tqdm
 
 from DFFKE_losses import contrastive, inverse_cross_entropy
 from models.model_factory_fn import get_generator, init_client_nets
 from dataset.utils_dataset import EmbLogitSet, FakeDataset, InfiniteDataLoader, CustomDataset
-from DFFKE_utils import mkdir, save_checkpoint, local_align_clients, evaluate, pure_student_evaluation
+from DFFKE_utils import mkdir, get_checkpoint_file_name, save_checkpoint, local_align_clients, evaluate, pure_student_evaluation
 
 
 def generate_labels(n, class_num):
@@ -133,105 +131,56 @@ def local_to_generator(
         device='cuda',):
 
     num_clients, num_classes = client_class_cnt.shape
-    class_num = np.sum(client_class_cnt, axis=0)
-    # client_class_weight = client_class_cnt / (np.tile(class_num[np.newaxis, :], (num_clients, 1)) + 1e-6)
-    # class_client_weight = client_class_weight.transpose()
     L2G_client_data_loader = client_aug_data_loaders if args['L2G_augment_logits'] else client_data_loaders
 
     ###################################### Clustering Clients Data Distribution ######################################
+
+    for client in clients: client.eval() # Freeze BN to collect client data embeddings
     wandb_step = wandb.run.step if args['log_wandb'] else 0
-    if args['cls_clustering']:
-        # Collect data embeddings from clients
-        client_emb_logit_loaders = {}
-        n_samples = {}
-        for c_id, client in enumerate(clients):
-            client.eval()
-            client_emb = []
-            client_logit = []
-            client_target = []
-            with torch.no_grad():
-                for data, target in L2G_client_data_loader[c_id]:
-                    data, target = data.to(device), target.to(device)
-                    emb, logit = client(data, use_docking=False)
-                    client_emb.append(emb.detach())
-                    client_logit.append(F.softmax(logit, dim=1).detach())
-                    client_target.append(target)
-            client_emb = torch.cat(client_emb, dim=0).cpu()
-            client_logit = torch.cat(client_logit, dim=0).cpu()
-            client_target = torch.cat(client_target, dim=0).cpu()
-            emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
-            client_emb_logit_loaders[c_id] = DataLoader(emb_logit_set, batch_size=batch_size)
-            n_samples[c_id] = len(client_target)
 
-        # Train the docking layer for each client to optimally cluster the data embeddings
-        cls_layer = nn.Linear(clients[0].docking.out_features, num_classes).to(device)
-        clustering_params = list(cls_layer.parameters())
-        for c_id, client in enumerate(clients):
-            clustering_params.extend(client.docking.parameters())
-        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-3)
-        for s in tqdm(range(100)):
-            clustering_loss = []
-            for c_id, client in enumerate(clients):
-                emb_logit_loader = client_emb_logit_loaders[c_id]
-                loss = torch.Tensor([0]).to(device)
-                docking_optimizer.zero_grad()
-                for emb, _, target in emb_logit_loader:
-                    emb, target = emb.to(device), target.to(device)
-                    logit = cls_layer(client.docking(emb))
-                    loss += F.cross_entropy(logit, target, reduction='sum')
-                loss /= n_samples[c_id]
-                loss.backward()
-                docking_optimizer.step()
-                clustering_loss.append(loss.item())
-            if args['log_wandb']:
-                wandb.log({'Clustering Loss': np.mean(clustering_loss)}, step=wandb_step + s)
-    else: # Regular Clustering
-        # Collect data embeddings from clients
-        data_embeddings = defaultdict(lambda: defaultdict(list))
-        for c_id, client in enumerate(clients):
-            client.eval()
-            client_data_loader = L2G_client_data_loader[c_id]
-            with torch.no_grad():
-                for data, target in client_data_loader:
-                    data = data.to(device)
-                    embedding = client(data, use_docking=False)[0].detach()
-                    for i, y in enumerate(target):
-                        data_embeddings[y.item()][c_id].append(embedding[i])
+    # Collect data embeddings from clients
+    client_emb_logit_loaders = {}
+    n_samples = {}
+    for c_id, client in enumerate(clients):
+        client_emb = []
+        client_logit = []
+        client_target = []
+        with torch.no_grad():
+            for data, target in L2G_client_data_loader[c_id]:
+                data, target = data.to(device), target.to(device)
+                emb, logit = client(data, use_docking=False)
+                client_emb.append(emb.detach())
+                client_logit.append(F.softmax(logit, dim=1).detach())
+                client_target.append(target)
+        client_emb = torch.cat(client_emb, dim=0).cpu()
+        client_logit = torch.cat(client_logit, dim=0).cpu()
+        client_target = torch.cat(client_target, dim=0).cpu()
+        emb_logit_set = EmbLogitSet(client_emb, client_logit, client_target)
+        client_emb_logit_loaders[c_id] = DataLoader(emb_logit_set, batch_size=batch_size)
+        n_samples[c_id] = len(client_target)
 
-        client_data_embeddings = defaultdict(dict)
-        for y in data_embeddings:
-            for c_id in data_embeddings[y]:
-                client_data_embeddings[y][c_id] = torch.stack(data_embeddings[y][c_id])
-        del data_embeddings
-
-        # Train the docking layer for each client to optimally cluster the data embeddings
-        clustering_params = []
+    # Train the docking layer for each client to optimally cluster the data embeddings
+    cls_layer = nn.Linear(clients[0].docking.out_features, clients[0].output.out_features).to(device)
+    clustering_params = list(cls_layer.parameters())
+    for c_id, client in enumerate(clients):
+        clustering_params.extend(client.docking.parameters())
+    docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001, weight_decay=1e-3)
+    for s in tqdm(range(100)):
+        clustering_loss = []
         for c_id, client in enumerate(clients):
-            clustering_params.extend(client.docking.parameters())
-        docking_optimizer = torch.optim.Adam(clustering_params, lr=0.001)
-        for s in tqdm(range(500)):
-            class_embeddings = {}
+            emb_logit_loader = client_emb_logit_loaders[c_id]
+            loss = torch.Tensor([0]).to(device)
             docking_optimizer.zero_grad()
-            for y, embeddings in client_data_embeddings.items():
-                class_embeddings[y] = torch.cat([clients[c_id].docking(embeddings[c_id]) for c_id in embeddings])
-            class_means = {y: class_embeddings[y].mean(dim=0) for y in class_embeddings}
-
-            class_means_tensor = []
-            class_means_label = []
-            for y, class_mean in class_means.items():
-                class_means_tensor.append(class_mean)
-                class_means_label.append(y)
-            class_means_tensor = torch.stack(class_means_tensor)
-            contrastive_loss = contrastive(class_means_tensor, class_means_tensor.detach())
-            class_means = {y: class_means[y].detach().repeat((class_embeddings[y].shape[0], 1)) for y in class_means}
-            mse_loss = torch.stack([F.mse_loss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
-            l1_loss = torch.stack([F.l1_loss(class_embeddings[y], class_means[y]) for y in class_embeddings]).mean()
-            (contrastive_loss + mse_loss).backward()
+            for emb, _, target in emb_logit_loader:
+                emb, target = emb.to(device), target.to(device)
+                logit = cls_layer(client.docking(emb))
+                loss += F.cross_entropy(logit, target, reduction='sum')
+            loss /= n_samples[c_id]
+            loss.backward()
             docking_optimizer.step()
-            if args['log_wandb']:
-                wandb.log({'Clustering MSE Loss': mse_loss.item()}, step=wandb_step + s)
-                wandb.log({'Clustering L1 Loss': l1_loss.item()}, step=wandb_step + s)
-                wandb.log({'Clustering Contrastive Loss': contrastive_loss.item()}, step=wandb_step + s)
+            clustering_loss.append(loss.item())
+        if args['log_wandb']:
+            wandb.log({'Clustering Loss': np.mean(clustering_loss)}, step=wandb_step + s)
 
     # Collect the embeddings and logits of the clients
     client_emb_logit_loaders = []
@@ -259,7 +208,8 @@ def local_to_generator(
 
     wandb_step = wandb.run.step if args['log_wandb'] else 0
     generator.train()
-    pure_student.eval()
+    for client in clients: client.eval()  # Freeze BN to distill original training knowledge
+    for client in knowledge_exchanged_clients: client.eval()  # Freeze BN to contrast previous exchanged knowledge
     max_data_len = max([len(loader) for loader in client_emb_logit_loaders])
     L2G_iteration = L2G_epoch * max_data_len
     for s in tqdm(range(L2G_iteration)):
@@ -340,14 +290,42 @@ def generator_to_local(
         G2L_epoch,
         batch_size,
         device='cpu',):
-
-    for client in clients:
-        client.eval()
-    generator.eval()
     num_clients, num_classes = client_class_cnt.shape
 
     ######################################## Generate Fake Data From Generator ########################################
+
+    generator.eval()  # Enable BN to generate fake data
+    for client in clients: client.eval()  # Freeze BN to distill original training knowledge
+
     # Generate Fake Data From Generator
+    all_fake_data = []
+    all_fake_target = []
+    for c_id, client in enumerate(clients):
+        fake_data = []
+        fake_target = []
+        for emb, logit, target in client_emb_logit_loaders[c_id]:
+            emb, target = emb.to(device), target.to(device)
+            y_one_hot = torch.zeros((len(target), num_classes)).to(device)
+            y_one_hot.scatter_(1, target.unsqueeze(1), 1)
+            c_fake_data = generator(emb, y_one_hot)
+            fake_data.append(c_fake_data.detach())
+            fake_target.append(target)
+        fake_data = torch.cat(fake_data, dim=0).cpu()
+        fake_target = torch.cat(fake_target, dim=0).cpu()
+        all_fake_data.append(fake_data)
+        all_fake_target.append(fake_target)
+
+    # Normalize fake data
+    combined_fake_data = torch.cat(all_fake_data, dim=0)
+    mean = combined_fake_data.mean([0, 2, 3], keepdim=True)
+    std = combined_fake_data.std([0, 2, 3], keepdim=True)
+    print(f'>>Fake Data Mean: {mean.view(3)}, Std: {std.view(3)}')
+    # if args['normalize_fake_data']:
+    #     print(f'>> Normalizing Fake Data...')
+    #     for i, fake_data in enumerate(all_fake_data):
+    #         all_fake_data[i] = (fake_data - mean) / std
+
+    # Prepare fake data loaders
     fake_datasets = []
     fake_data_loaders = []
     for c_id, client in enumerate(clients):
@@ -355,23 +333,17 @@ def generator_to_local(
         fake_emb = []
         fake_logit = []
         fake_target = []
+        temp_loader = DataLoader(CustomDataset(all_fake_data[c_id], all_fake_target[c_id]), batch_size=batch_size)
         with torch.no_grad():
-            for emb, logit, target in client_emb_logit_loaders[c_id]:
-                emb, target = emb.to(device), target.to(device)
-                y_one_hot = torch.zeros((len(target), num_classes)).to(device)
-                y_one_hot.scatter_(1, target.unsqueeze(1), 1)
-                c_fake_data = generator(emb, y_one_hot)
+            for c_fake_data, target in temp_loader:
+                c_fake_data, target = c_fake_data.to(device), target.to(device)
                 c_fake_emb, c_fake_logit = client(c_fake_data, use_docking=True)
                 fake_data.append(c_fake_data.detach())
                 fake_emb.append(c_fake_emb.detach())
                 fake_logit.append(F.softmax(c_fake_logit, dim=1).detach())
                 fake_target.append(target)
-
-        fake_data = torch.cat(fake_data, dim=0).cpu()
-        fake_emb = torch.cat(fake_emb, dim=0).cpu()
-        fake_logit = torch.cat(fake_logit, dim=0).cpu()
-        fake_target = torch.cat(fake_target, dim=0).cpu()
-        fake_datasets.append(FakeDataset(fake_data, fake_emb, fake_logit, fake_target))
+        fake_datasets.append(FakeDataset(torch.cat(fake_data, dim=0).cpu(), torch.cat(fake_emb, dim=0).cpu(), 
+                                         torch.cat(fake_logit, dim=0).cpu(), torch.cat(fake_target, dim=0).cpu()))
         fake_data_loaders.append(DataLoader(fake_datasets[c_id], batch_size=batch_size, shuffle=True, drop_last=True))
 
     # Calculate G2L Iteration
@@ -379,8 +351,8 @@ def generator_to_local(
     G2L_iteration = G2L_epoch * max_data_len
 
     data_bank_loaders = []
+    # Preprocess data bank knowledge from each teacher (client)
     for c_id, client in enumerate(clients):
-        # Preprocess data bank knowledge from each teacher (client)
         if len(data_banks[c_id]) > 0:
             fake_data = []
             fake_emb = []
@@ -400,19 +372,16 @@ def generator_to_local(
             data_bank_loaders.append(DataLoader(db_review_dataset, batch_size=batch_size, shuffle=True, drop_last=True))
 
     #################################### Client Knowledge Exchange using Fake Data ####################################
-    pure_student.train()
-    for client in clients:
-        client.train()
 
+    pure_student.train()
+    pure_student_optimizer = optim.Adam(pure_student.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
+    for client in clients: client.train()
     client_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(client_data_loaders)]
     fake_data_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(fake_data_loaders)]
     data_bank_inf_loaders = [InfiniteDataLoader(loader) for c_id, loader in enumerate(data_bank_loaders)]
 
     # Convert Dict to List to save hashing time
     students = [[c_id, client, client_optimizers[c_id], client_inf_loaders[c_id]] for c_id, client in enumerate(clients)]
-
-    import torch.optim as optimizer
-    pure_student_optimizer = optimizer.Adam(pure_student.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
     wandb_step = wandb.run.step if args['log_wandb'] else 0
 
     for i in tqdm(range(G2L_iteration)):
@@ -456,7 +425,7 @@ def generator_to_local(
                     if c_id == data_bank_id:
                         continue
                     client_optimizer.zero_grad()
-                    c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
+                    c_fake_emb, c_fake_logit = client(fake_data, use_docking=True)
                     loss = torch.Tensor([0]).to(device)
                     if args['G2L_cal_emb_loss']:
                         emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
@@ -471,7 +440,7 @@ def generator_to_local(
 
                 # Extra: Train Pure Student to examine the performance of Knowledge Exchange
                 pure_student_optimizer.zero_grad()
-                ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
+                ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=True)
                 loss = torch.Tensor([0]).to(device)
                 if args['G2L_cal_emb_loss']:
                     emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
@@ -491,7 +460,7 @@ def generator_to_local(
                 if c_id == data_bank_id:
                     continue
                 client_optimizer.zero_grad()
-                c_fake_emb, c_fake_logit = client(fake_data, use_docking=args['dock_kd'])
+                c_fake_emb, c_fake_logit = client(fake_data, use_docking=True)
                 loss = torch.Tensor([0]).to(device)
                 if args['G2L_cal_emb_loss']:
                     emb_loss = F.mse_loss(c_fake_emb, t_fake_emb)
@@ -506,7 +475,7 @@ def generator_to_local(
 
             # Extra: Train Pure Student to examine the performance of Knowledge Exchange
             pure_student_optimizer.zero_grad()
-            ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=args['dock_kd'])
+            ps_fake_emb, ps_fake_logit = pure_student(fake_data, use_docking=True)
             loss = torch.Tensor([0]).to(device)
             if args['G2L_cal_emb_loss']:
                 emb_loss = F.mse_loss(ps_fake_emb, t_fake_emb)
@@ -575,14 +544,16 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         client_optimizers[client_id] = optim.Adam(client.parameters(), lr=args['client_lr'], weight_decay=args['reg'])
 
     ############################################### Warmup Clients Model ###############################################
+
     mkdir(args['checkpoint_dir'])
     # Load the checkpoint if needed
     if args['load_clients'] is not None:
-        file_name = f'{args["dataset"]}_{args["n_clients"]}client_{args["alpha"]}alpha_{args["client_encoder"]}_checkpoint'
+        file_name = get_checkpoint_file_name(args)
         checkpoint_path = args['load_clients'] + file_name + '.pt'
         # Check if the checkpoint exists
         if not os.path.exists(checkpoint_path):
             print(f'>> Checkpoint file {checkpoint_path} does not exist. Skip loading clients.')
+            args['load_clients'] = None
         else:
             print(f'>> Loading clients checkpoint from {checkpoint_path}')
             state_dict = torch.load(checkpoint_path)
@@ -596,7 +567,7 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             print(f'>> Loaded.')
 
     # Client local training until converge
-    if args['warmup_clients']:
+    if args['load_clients'] is None and args['warmup_clients']:
         # Initialize client optimizers
         print(">> Warmup Each Clients:")
         local_align_clients(
@@ -610,6 +581,8 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
 
         save_checkpoint(args, clients, client_optimizers, checkpoint_folder='warmup/')
         print(">> Warmup Clients Finished.")
+    else:
+        print(">> Skip Warmup Clients. If this is not intended, please modify configuration properly.")
 
     evaluate(clients, full_train_loader, 'Train', 'Local Aligned', 'cls_test', args['log_wandb'], device)
     evaluate(clients, full_test_loader, 'Test', 'Local Aligned', 'cls_test', args['log_wandb'], device)
@@ -617,10 +590,11 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
     print("-------------------------------------------------------------------------------------------------")
 
     ################################################ Knowledge Exchange ################################################
-    local_aligned_best_test_loss = [0] * args['n_clients']
-    local_aligned_best_test_acc = [0] * args['n_clients']
+
+    best_test_acc_mean = 0
+    best_test_acc_std = 0
     data_banks = [CustomDataset([], []) for _ in range(args['n_clients'])]
-    knowledge_exchanged_clients = clients.copy()
+    knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
 
     for round_i in range(args['knowledge_exchange_rounds']):
         print(f'>> Current Round: {round_i}')
@@ -673,11 +647,18 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
         # Save a copy of knowledge exchanged clients for next round adversarial loss calculation
         knowledge_exchanged_clients = [copy.deepcopy(client) for client in clients]
         # Evaluate after knowledge exchange
-        pure_student.train()
+        pure_student.eval()
         pure_student_evaluation(pure_student, full_train_loader, full_test_loader, args['log_wandb'], device)
-        for client in clients: client.train()
+        for client in clients: client.eval()
         evaluate(clients, full_train_loader, 'Train', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
-        evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
+        t_acc = evaluate(clients, full_test_loader, 'Test', 'Global Exchanged', 'cls_test', args['log_wandb'], device)
+        if np.mean(t_acc) > best_test_acc_mean:
+            best_test_acc_mean = np.mean(t_acc)
+            best_test_acc_std = np.std(t_acc)
+            save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/')
+        elif best_test_acc_mean - np.mean(t_acc) > 8:
+            print("Early Stopping...")
+            break
 
         if args['local_align_after_knowledge_exchange']:
             local_align_clients(
@@ -698,5 +679,5 @@ def data_free_federated_knowledge_exchange(args, data_distributor):
             torch.cuda.empty_cache()
         print("-------------------------------------------------------------------------------------------------")
 
-    save_checkpoint(args, clients, client_optimizers, checkpoint_folder='knowledge_exchange/')
+    print(f">> Best Test Accuracy after Knowledge Exchange: {best_test_acc_mean:.2f} ± {best_test_acc_std:.2f}")
     print("DFFKE Algorithm Ended.")
