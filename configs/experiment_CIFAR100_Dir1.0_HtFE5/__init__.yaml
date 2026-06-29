@@ -1,0 +1,98 @@
+######### System #########
+device: cuda
+device_id: 1
+log_wandb: True
+wandb_project: DFFKE
+wandb_name: null # If null, name will be automatically generated based on configuration
+
+seed: 0
+n_clients: 10
+algorithm: null # Local / DFFKE / LG-FedAvg / FedGen / FedGH / FML / FedKD / FedDistill / FedProto / FedKTL-stylegan-xl
+
+######### Baseline General #########
+experiment_name: CIFAR100_Dir_1.0_HtFE5
+model_family: HtFE5
+global_rounds: 300
+local_epochs: 1
+eval_gap: 5
+save_folder_name: temp
+auto_break: True
+auto_break_patient: 10
+feature_dim: 512
+result_dir: ./results/
+vocab_size: 98635
+text_max_len: 200
+
+######### FL Dataset Setting #########
+dataset: CIFAR100 # CIFAR10 / CIFAR100 / FC100 / TinyImageNet
+num_classes: 100
+resize_img: 128
+use_data_distributor: True # If False, dataset must be prepared using generate files in dataset directory
+data_dir: ./data/
+data_partition: non_iid_balanced  # iid, non_iid_unbalanced, non_iid_balanced, personalized_non_iid_balanced
+alpha: 1.0 # Degree of non-iid data split (0.1 High Hetero, 1.0 Medium Hetero, 10.0 Low Hetero)
+redo_ds_split: False
+
+# Training Hyper-parameters
+batch_size: 100 # 10 for all baseline algorithms, 100 for DFFKE
+client_lr: 0.001 # 0.001 for Adam optimizer
+decoder_model_lr: 0.001
+sgd_lr: 0.01 # 0.01 for all baseline SGD optimizer
+reg: 1.0e-05
+
+######### FedProto / FedDistill #########
+lamda: 1.0
+
+######### FedGen #########
+noise_dim: 512
+generator_learning_rate: 0.005
+hidden_dim: 512
+server_epochs: 100
+
+######### FML #########
+fml_alpha: 1.0
+fml_beta: 1.0
+
+######### FedKD #########
+mentee_learning_rate: 0.005
+T_start: 0.95
+T_end: 0.98
+
+######### FedGH #########
+server_learning_rate: 0.01
+
+######### FedTGP #########
+margin_threthold: 100.0
+
+######### FedKTL #########
+generator_path: checkpoints/stylegan-xl-models/imagenet64.pkl
+stable_diffusion_prompt: a cat
+server_batch_size: 100
+gen_batch_size: 4
+mu: 50.0
+
+
+######### DFFKE Setting #########
+decoder_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
+knowledge_exchange_rounds: 40
+local_align_acc: 0.98
+decoder_train_epoch: 6
+FKE_epoch: 4
+clustering_iteration: 100 # 100 is usually enough to have clustering network to converge
+
+# Ablation Controls
+memory_buffer_iteration: 1
+
+save_clients: True
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/
+
+######### FL Scenario #########
+client_drop_rate: 0.0
+train_slow_rate: 0.0
+send_slow_rate: 0.0
+join_ratio: 1.0
+random_join_ratio: false

@@ -1,0 +1,27 @@
+######### System #########
+device: cuda
+device_id: 0
+log_wandb: True
+wandb_project: DFFKE
+wandb_name: Ablation - Memory Buffer Limit 0 - No KE memory loss
+
+algorithm: DFFKE
+
+######### DFFKE Setting #########
+decoder_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
+knowledge_exchange_rounds: 40
+local_align_acc: 0.98
+decoder_train_epoch: 6
+FKE_epoch: 8 # !!! With memory loss disabled, in order to match the same number of updates, double FKE_epoch
+clustering_iteration: 100 # 100 is usually enough to have clustering network to converge
+
+# Ablation Controls
+memory_buffer_iteration: 0 # !!!!!! Disable memory loss
+memory_limit: 0 # 0 is no limit, any other value will limit the amount of memory in memory buffer from previous round
+
+save_clients: False
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/

@@ -1,0 +1,4 @@
+algorithm: FedGH
+######### FedGH #########
+server_learning_rate: 0.01
+server_epochs: 1

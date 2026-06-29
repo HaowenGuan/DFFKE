@@ -1,0 +1,39 @@
+name: DFFKE
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy<2
+  - pandas
+  - scikit-learn
+  - scipy
+  - ujson
+  - h5py
+  - pillow
+  - requests
+  - pyyaml
+  - click
+  - dill
+  - tqdm
+  - psutil
+  - setproctitle
+  - matplotlib
+  - seaborn
+  - mpi4py
+  - pytorch=2.2.0
+  - torchvision=0.17.0
+  - torchaudio=2.2.0
+  - pytorch-cuda=12.1
+  - pip:
+      - calmsize==0.1.3
+      - timm==0.4.12
+      - ftfy==6.2.3
+      - regex==2024.7.24
+      - wandb==0.17.1
+      - diffusers
+      - accelerate
+      - transformers

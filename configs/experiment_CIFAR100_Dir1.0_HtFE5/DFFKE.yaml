@@ -1,0 +1,19 @@
+algorithm: DFFKE
+######### DFFKE Setting #########
+client_lr: 0.001
+decoder_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
+knowledge_exchange_rounds: 40
+local_align_acc: 0.98
+decoder_train_epoch: 6
+FKE_epoch: 4
+clustering_iteration: 100 # 100 is usually enough to have clustering network to converge
+
+# Ablation Controls
+memory_buffer_iteration: 1
+
+save_clients: True
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/

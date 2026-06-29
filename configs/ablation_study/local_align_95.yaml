@@ -1,0 +1,24 @@
+######### System #########
+device: cuda
+device_id: 2
+log_wandb: True
+wandb_project: DFFKE
+wandb_name: Ablation - local_align_95
+
+algorithm: DFFKE
+model_family: HtFE1
+
+######### DFFKE Setting #########
+decoder_model: LatentGenerator # LatentGenerator / ClassLatentGenerator
+knowledge_exchange_rounds: 30
+local_align_acc: 0.95 # !!!!!!
+decoder_train_epoch: 6
+FKE_epoch: 4
+clustering_iteration: 100 # 100 is usually enough to have clustering network converge
+
+save_clients: False
+checkpoint_dir: ./checkpoints/
+######### Load Clients checkpoints #########
+#load_clients: null
+load_clients: ./checkpoints/warmup/
+#load_clients: ./checkpoints/knowledge_exchange/

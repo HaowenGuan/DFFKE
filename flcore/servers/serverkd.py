@@ -1,0 +1,102 @@
+import copy
+import random
+import time
+
+import numpy as np
+from flcore.clients.clientkd import clientKD, recover, decomposition
+from flcore.servers.serverbase import Server
+from flcore.clients.clientbase import load_item, save_item
+from threading import Thread
+from models.model import BaseHeadSplit
+
+
+class FedKD(Server):
+    def __init__(self, args, times):
+        super().__init__(args, times)
+        if args.save_folder_name == 'temp' or 'temp' not in args.save_folder_name:
+            global_model = BaseHeadSplit(args, 0).to(args.device)            
+            save_item(global_model, self.role, 'global_model', self.save_folder_name)
+        
+        # select slow clients
+        self.set_slow_clients()
+        self.set_clients(clientKD)
+
+        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.n_clients}")
+        print("Finished creating server and clients.")
+
+        # self.load_model()
+        self.Budget = []
+        self.auto_break_patient *= 2  # Due to Testing twice each round
+        self.T_start = args.T_start
+        self.T_end = args.T_end
+        self.energy = self.T_start
+
+
+    def train(self):
+        for i in range(self.global_rounds+1):
+            s_t = time.time()
+            self.selected_clients = self.select_clients()
+
+            print(f"\n-------------Round number: {i}-------------")
+            if i % self.eval_gap == 0:
+                print("\nEvaluate heterogeneous models after FedKD")
+                self.evaluate()
+
+            for client in self.selected_clients:
+                client.train()
+
+            self.receive_ids()
+            self.aggregate_parameters()
+
+            self.send_parameters()
+
+            _, download_cost = load_item('Server', 'compressed_param', self.save_folder_name, get_size=True)
+            download_cost *= len(self.selected_clients)
+            print(f"Download cost: {download_cost:.2f} MB")
+            self.download_cost_list.append(download_cost)
+
+            self.Budget.append(time.time() - s_t)
+            print('-'*25, 'time cost', '-'*25, self.Budget[-1])
+
+            if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], auto_break_patient=self.auto_break_patient):
+                break
+
+            self.energy = self.T_start + ((1 + i) / self.global_rounds) * (self.T_end - self.T_start)
+            for client in self.clients:
+                client.energy = self.energy
+
+        print("\nBest accuracy.")
+        print(f'{max(self.rs_test_acc):.2f}')
+        print("Average time cost per round.")
+        print(sum(self.Budget[1:])/len(self.Budget[1:]))
+        import torch
+        num_of_round_reach_best_acc = torch.topk(torch.tensor(self.rs_test_acc), 1).indices[0] * self.eval_gap
+        print(f"Total Upload cost: {sum(self.upload_cost_list[:num_of_round_reach_best_acc]):.2f} MB")
+        print(f"Total Download cost: {sum(self.download_cost_list[:num_of_round_reach_best_acc]):.2f} MB")
+
+        self.save_results()
+
+        
+    def aggregate_parameters(self):
+        assert (len(self.uploaded_ids) > 0)
+
+        global_model = load_item(self.role, 'global_model', self.save_folder_name)
+        global_param = {name: param.detach().cpu().numpy() 
+                        for name, param in global_model.named_parameters()}
+        for k in global_param.keys():
+            global_param[k] = np.zeros_like(global_param[k])
+        upload_cost = 0
+            
+        for cid in self.uploaded_ids:
+            client = self.clients[cid]
+            compressed_param, size = load_item(client.role, 'compressed_param', client.save_folder_name, get_size=True)
+            upload_cost += size
+            client_param = recover(compressed_param)
+            for server_k, client_k in zip(global_param.keys(), client_param.keys()):
+                global_param[server_k] += client_param[client_k] * 1/len(self.uploaded_ids)
+
+        print(f"Upload cost: {upload_cost:.2f} MB")
+        self.upload_cost_list.append(upload_cost)
+
+        compressed_param = decomposition(global_param.items(), self.energy)
+        save_item(compressed_param, self.role, 'compressed_param', self.save_folder_name)

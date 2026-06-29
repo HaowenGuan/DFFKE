@@ -1,0 +1,238 @@
+import torch
+import os
+import numpy as np
+import h5py
+import time
+import random
+import shutil
+
+from gdown import download
+
+from utils.data_utils import read_client_data, read_client_data_custom
+from flcore.clients.clientbase import load_item, save_item
+
+
+class Server(object):
+    def __init__(self, args, times):
+        # Set up the main attributes
+        self.args = args
+        self.device = args.device
+        self.dataset = args.dataset
+        self.data_distributor = args.data_distributor
+        self.num_classes = args.num_classes
+        self.global_rounds = args.global_rounds
+        self.local_epochs = args.local_epochs
+        self.batch_size = args.batch_size
+        self.learning_rate = args.client_lr
+        self.n_clients = args.n_clients
+        self.join_ratio = args.join_ratio
+        self.random_join_ratio = args.random_join_ratio
+        self.num_join_clients = int(self.n_clients * self.join_ratio)
+        self.current_num_join_clients = self.num_join_clients
+        self.algorithm = args.algorithm
+        self.experiment_name = args.experiment_name
+        self.auto_break = args.auto_break
+        self.auto_break_patient = args.auto_break_patient
+        self.result_dir = args.result_dir
+        self.role = 'Server'
+        if args.save_folder_name == 'temp':
+            args.save_folder_name_full = f'{args.save_folder_name}/{args.dataset}/{args.algorithm}/{time.time()}/'
+        elif 'temp' in args.save_folder_name:
+            args.save_folder_name_full = args.save_folder_name
+        else:
+            args.save_folder_name_full = f'{args.save_folder_name}/{args.dataset}/{args.algorithm}/'
+        self.save_folder_name = args.save_folder_name_full
+
+        self.clients = []
+        self.selected_clients = []
+        self.train_slow_clients = []
+        self.send_slow_clients = []
+
+        self.uploaded_weights = []
+        self.uploaded_ids = []
+
+        self.rs_test_acc = []
+        self.rs_test_auc = []
+        self.rs_train_loss = []
+
+        self.times = times
+        self.eval_gap = args.eval_gap
+        self.client_drop_rate = args.client_drop_rate
+        self.train_slow_rate = args.train_slow_rate
+        self.send_slow_rate = args.send_slow_rate
+
+        # set up upload and download communication cost
+        self.upload_cost_list = []
+        self.download_cost_list = []
+
+
+    def set_clients(self, clientObj):
+        for i, train_slow, send_slow in zip(range(self.n_clients), self.train_slow_clients, self.send_slow_clients):
+            if self.data_distributor:
+                train_data = read_client_data_custom(self.data_distributor, i, is_train=True)
+                test_data = read_client_data_custom(self.data_distributor, i, is_train=False)
+            else:
+                train_data = read_client_data(self.dataset, i, is_train=True)
+                test_data = read_client_data(self.dataset, i, is_train=False)
+            client = clientObj(self.args, 
+                            id=i, 
+                            train_samples=len(train_data), 
+                            test_samples=len(test_data), 
+                            train_slow=train_slow, 
+                            send_slow=send_slow)
+            self.clients.append(client)
+
+    # random select slow clients
+    def select_slow_clients(self, slow_rate):
+        slow_clients = [False for i in range(self.n_clients)]
+        idx = [i for i in range(self.n_clients)]
+        idx_ = np.random.choice(idx, int(slow_rate * self.n_clients))
+        for i in idx_:
+            slow_clients[i] = True
+
+        return slow_clients
+
+    def set_slow_clients(self):
+        self.train_slow_clients = self.select_slow_clients(self.train_slow_rate)
+        self.send_slow_clients = self.select_slow_clients(self.send_slow_rate)
+
+    def select_clients(self):
+        if self.random_join_ratio:
+            self.current_num_join_clients = np.random.choice(range(self.num_join_clients, self.n_clients + 1), 1, replace=False)[0]
+        else:
+            self.current_num_join_clients = self.num_join_clients
+        selected_clients = list(np.random.choice(self.clients, self.current_num_join_clients, replace=False))
+
+        return selected_clients
+
+    def send_parameters(self):
+        assert (len(self.clients) > 0)
+
+        for client in self.clients:
+            start_time = time.time()
+            
+            client.set_parameters()
+
+            client.send_time_cost['num_rounds'] += 1
+            client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+
+    def receive_ids(self):
+        assert (len(self.selected_clients) > 0)
+
+        active_clients = random.sample(
+            self.selected_clients, int((1-self.client_drop_rate) * self.current_num_join_clients))
+
+        self.uploaded_ids = []
+        self.uploaded_weights = []
+        tot_samples = 0
+        for client in active_clients:
+            tot_samples += client.train_samples
+            self.uploaded_ids.append(client.id)
+            self.uploaded_weights.append(client.train_samples)
+        for i, w in enumerate(self.uploaded_weights):
+            self.uploaded_weights[i] = w / tot_samples
+
+    def aggregate_parameters(self):
+        assert (len(self.uploaded_ids) > 0)
+
+        client = self.clients[self.uploaded_ids[0]]
+        global_model = load_item(client.role, 'model', client.save_folder_name)
+        for param in global_model.parameters():
+            param.data.zero_()
+            
+        for w, cid in zip(self.uploaded_weights, self.uploaded_ids):
+            client = self.clients[cid]
+            client_model = load_item(client.role, 'model', client.save_folder_name)
+            for server_param, client_param in zip(global_model.parameters(), client_model.parameters()):
+                server_param.data += client_param.data.clone() * w
+
+        save_item(global_model, self.role, 'global_model', self.save_folder_name)
+        
+    def save_results(self):
+        if not os.path.exists(self.result_dir):
+            os.makedirs(self.result_dir)
+
+        if len(self.rs_test_acc):
+            file_name = self.dataset + "_" + self.algorithm + "_" + self.experiment_name + "_" + str(self.times)
+            file_path = self.result_dir + file_name + ".h5"
+            print("File path: " + file_path)
+
+            with h5py.File(file_path, 'w') as hf:
+                hf.create_dataset('rs_test_acc', data=self.rs_test_acc)
+                hf.create_dataset('rs_test_auc', data=self.rs_test_auc)
+                hf.create_dataset('rs_train_loss', data=self.rs_train_loss)
+        
+        if 'temp' in self.save_folder_name:
+            try:
+                shutil.rmtree(self.save_folder_name)
+                print('Deleted.')
+            except:
+                print('Already deleted.')
+
+    def test_metrics(self):        
+        num_samples = []
+        tot_correct = []
+        tot_auc = []
+        for c in self.clients:
+            ct, ns, auc = c.test_metrics()
+            tot_correct.append(ct*1.0)
+            print(f'Client {c.id}: Acc: {ct*1.0/ns}, AUC: {auc}')
+            tot_auc.append(auc*ns)
+            num_samples.append(ns)
+
+        ids = [c.id for c in self.clients]
+
+        return ids, num_samples, tot_correct, tot_auc
+
+    def train_metrics(self):        
+        num_samples = []
+        losses = []
+        for c in self.clients:
+            cl, ns = c.train_metrics()
+            num_samples.append(ns)
+            losses.append(cl*1.0)
+            print(f'Client {c.id}: Loss: {cl*1.0/ns}')
+
+        ids = [c.id for c in self.clients]
+
+        return ids, num_samples, losses
+
+    # evaluate selected clients
+    def evaluate(self, acc=None, loss=None):
+        stats = self.test_metrics()
+        # stats_train = self.train_metrics()
+
+        test_acc = sum(stats[2])*1.0 / sum(stats[1]) * 100
+        test_auc = sum(stats[3])*1.0 / sum(stats[1])
+        accs = [a / n * 100 for a, n in zip(stats[2], stats[1])]
+        aucs = [a / n for a, n in zip(stats[3], stats[1])]
+        
+        if acc is None:
+            self.rs_test_acc.append(test_acc)
+        else:
+            acc.append(test_acc)
+
+        print("Averaged Test Accuracy: {:.2f}".format(test_acc))
+        print("Averaged Test AUC: {:.4f}".format(test_auc))
+        print("Std Test Accuracy: {:.2f}".format(np.std(accs)))
+        print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+
+    def print_(self, test_acc, test_auc, train_loss):
+        print("Average Test Accuracy: {:.2f}".format(test_acc))
+        print("Average Test AUC: {:.4f}".format(test_auc))
+        print("Average Train Loss: {:.4f}".format(train_loss))
+
+    def check_done(self, acc_lss, auto_break_patient=None, div_value=None):
+        for acc_ls in acc_lss:
+            if auto_break_patient is not None and div_value is not None:
+                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > auto_break_patient
+                find_div = len(acc_ls) > 1 and np.std(acc_ls[-auto_break_patient:]) < div_value
+                return find_top and find_div
+            elif auto_break_patient is not None:
+                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > auto_break_patient
+                return find_top
+            elif div_value is not None:
+                find_div = len(acc_ls) > 1 and np.std(acc_ls[-auto_break_patient:]) < div_value
+                return find_div
+            else:
+                raise NotImplementedError
